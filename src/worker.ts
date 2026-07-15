@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Worker } from 'bullmq';
 import { env, requireEnv } from './env.js';
 import { loadGatewayConfig } from './config.js';
