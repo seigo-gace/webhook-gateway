@@ -1,0 +1,104 @@
+{
+  "sources": [
+    {
+      "id": "github-main",
+      "appId": "gace-core",
+      "name": "github-main",
+      "slug": "github-main",
+      "provider": "github",
+      "secretEnv": "INBOUND_GITHUB_SECRET",
+      "toleranceSeconds": 300,
+      "enabled": true
+    },
+    {
+      "id": "standard-demo",
+      "appId": "gace-core",
+      "name": "standard-demo",
+      "slug": "standard-demo",
+      "provider": "standard",
+      "secretEnv": "INBOUND_STANDARD_SECRET",
+      "toleranceSeconds": 300,
+      "enabled": true
+    },
+    {
+      "id": "stripe-payments",
+      "appId": "billing",
+      "name": "stripe-payments",
+      "slug": "stripe-payments",
+      "provider": "stripe",
+      "secretEnv": "INBOUND_STRIPE_SECRET",
+      "toleranceSeconds": 300,
+      "enabled": true
+    },
+    {
+      "id": "slack-events",
+      "appId": "gace-core",
+      "name": "slack-events",
+      "slug": "slack-events",
+      "provider": "slack",
+      "secretEnv": "INBOUND_SLACK_SECRET",
+      "toleranceSeconds": 300,
+      "enabled": true
+    },
+    {
+      "id": "telegram-bot",
+      "appId": "telegram-bot",
+      "name": "telegram-bot",
+      "slug": "telegram-bot",
+      "provider": "telegram",
+      "secretEnv": "INBOUND_TELEGRAM_SECRET",
+      "enabled": true
+    },
+    {
+      "id": "generic-hmac",
+      "appId": "gace-core",
+      "name": "generic-hmac",
+      "slug": "generic-hmac",
+      "provider": "generic-hmac-sha256",
+      "secretEnv": "INBOUND_GENERIC_SECRET",
+      "toleranceSeconds": 300,
+      "enabled": true,
+      "generic": {
+        "signatureHeader": "x-signature",
+        "timestampHeader": "x-timestamp",
+        "signatureEncoding": "hex",
+        "signaturePrefix": "sha256=",
+        "signedContent": "timestamp.body"
+      }
+    }
+  ],
+  "destinations": [
+    {
+      "id": "app-receiver",
+      "appId": "gace-core",
+      "name": "app-receiver",
+      "urlEnv": "DEST_APP_URL",
+      "method": "POST",
+      "payloadMode": "cloudevents",
+      "signingSecretEnv": "OUTBOUND_APP_SECRET",
+      "timeoutMs": 5000,
+      "maxAttempts": 8,
+      "enabled": true
+    },
+    {
+      "id": "tgserver-receiver",
+      "appId": "tgserver",
+      "name": "tgserver-receiver",
+      "urlEnv": "DEST_TGSERVER_URL",
+      "method": "POST",
+      "payloadMode": "cloudevents",
+      "signingSecretEnv": "OUTBOUND_TGSERVER_SECRET",
+      "timeoutMs": 5000,
+      "maxAttempts": 8,
+      "enabled": true
+    }
+  ],
+  "routes": [
+    { "id": "github-to-app", "sourceId": "github-main", "destinationId": "app-receiver", "eventTypePattern": "*", "enabled": true },
+    { "id": "standard-to-app", "sourceId": "standard-demo", "destinationId": "app-receiver", "eventTypePattern": "*", "enabled": true },
+    { "id": "stripe-to-app", "sourceId": "stripe-payments", "destinationId": "app-receiver", "eventTypePattern": "*", "enabled": true },
+    { "id": "slack-to-app", "sourceId": "slack-events", "destinationId": "app-receiver", "eventTypePattern": "*", "enabled": true },
+    { "id": "telegram-to-tgserver", "sourceId": "telegram-bot", "destinationId": "tgserver-receiver", "eventTypePattern": "*", "enabled": true },
+    { "id": "generic-to-app", "sourceId": "generic-hmac", "destinationId": "app-receiver", "eventTypePattern": "*", "enabled": true }
+  ]
+}
