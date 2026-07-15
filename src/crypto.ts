@@ -17,3 +17,7 @@ export function timingSafeEqual(a: Buffer, b: Buffer): boolean {
 export function sha256Hex(content: Buffer | string): string {
   return crypto.createHash('sha256').update(content).digest('hex');
 }
+
+export function randomId(): string {
+  return crypto.randomUUID();
+}

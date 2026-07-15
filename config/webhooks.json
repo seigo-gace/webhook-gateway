@@ -61,6 +61,8 @@
       "generic": {
         "signatureHeader": "x-signature",
         "timestampHeader": "x-timestamp",
+        "idHeader": "x-event-id",
+        "eventTypeHeader": "x-event-type",
         "signatureEncoding": "hex",
         "signaturePrefix": "sha256=",
         "signedContent": "timestamp.body"
@@ -75,10 +77,16 @@
       "urlEnv": "DEST_APP_URL",
       "method": "POST",
       "payloadMode": "cloudevents",
+      "dataMode": "json_object",
+      "successMode": "status_only",
       "signingSecretEnv": "OUTBOUND_APP_SECRET",
-      "timeoutMs": 5000,
+      "timeoutMs": 30000,
       "maxAttempts": 8,
-      "enabled": true
+      "unknownPolicy": "retry_then_dead",
+      "enabled": true,
+      "headers": {
+        "x-gace-destination": "app-receiver"
+      }
     },
     {
       "id": "tgserver-receiver",
@@ -87,10 +95,16 @@
       "urlEnv": "DEST_TGSERVER_URL",
       "method": "POST",
       "payloadMode": "cloudevents",
+      "dataMode": "json_object",
+      "successMode": "status_only",
       "signingSecretEnv": "OUTBOUND_TGSERVER_SECRET",
-      "timeoutMs": 5000,
+      "timeoutMs": 30000,
       "maxAttempts": 8,
-      "enabled": true
+      "unknownPolicy": "retry_then_dead",
+      "enabled": true,
+      "headers": {
+        "x-gace-destination": "tgserver-receiver"
+      }
     }
   ],
   "routes": [

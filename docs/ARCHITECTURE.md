@@ -1,34 +1,26 @@
-# Architecture
+# Architecture v1.2.2
 
-## 結論
-
-G-ACE Universal Webhook Gateway は、外部Webhookをアプリ本体へ直接刺さず、独立した共通入口で受信・検証・保存・配送・復旧をまとめる基盤です。
+## Core flow
 
 ```text
-Provider
-  -> Gateway API
-  -> PostgreSQL event ledger
-  -> Redis / BullMQ delivery queue
-  -> Worker
-  -> Internal applications
+Provider -> API -> signature verification -> PostgreSQL ledger -> Redis/BullMQ -> Worker -> Internal app
 ```
 
-## 設計原則
+## Non-negotiable rules
 
-1. 署名検証前にpayloadを信用しない。
-2. raw bodyを保持してProvider仕様通りに検証する。
-3. Postgresを正本、Redisを配送路として分離する。
-4. 配送は at-least-once とし、Downstreamで冪等化する。
-5. 外部署名と内部配送署名を分離する。
-6. Redis失敗、Worker停止、DB保存失敗にそれぞれ復旧経路を持つ。
+1. Do not parse JSON before provider signature verification.
+2. Do not treat Redis as source of truth.
+3. Do not wait for downstream delivery before returning 202 to provider.
+4. Do not expose Admin API publicly.
+5. Do not add Admin config mutation in v1.2.2.
+6. Do not store raw body by default.
 
-## Failure model
+## Delivery success
 
-- Redis enqueue失敗: Postgresのdelivery行をRecovery Sweeperが再投入する。
-- Worker停止: stale `delivering` を `retrying` へ戻す。
-- DB保存失敗: 署名検証後のイベントを `/spool/*.json` に原子的保存する。
-- VPS/DNS/ネットワーク断: Gateway到達前のため、Provider retry・配信履歴・冗長化で補完する。
+`successMode=status_only`: any 2xx response is delivered.
 
-## Source of truth
+`successMode=status_and_header`: 2xx plus configured accepted header is required. Missing header creates `unknown`; `unknown` is retried with max attempts and then becomes `dead`.
 
-正本はPostgreSQLの `events` と `deliveries` です。Redisは再構築可能な配送キューとして扱います。
+## Replay
+
+Replay works from `cloud_event` and `normalized_payload`, not from `body_text`. `STORE_RAW_BODY=false` must not break replay.

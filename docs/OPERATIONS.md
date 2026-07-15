@@ -1,67 +1,43 @@
-# Operations Runbook
+# Operations v1.2.2
 
-## 起動
+## Start
 
 ```bash
 cp .env.example .env
 npm install
-npm run secret
-# .env を実値へ変更
+npm run build
+npm test
 docker compose up -d --build
 ```
 
-## 状態確認
+## Health
 
 ```bash
-docker compose ps
-docker compose logs -f api
-docker compose logs -f worker
 curl http://127.0.0.1:7373/healthz
 curl http://127.0.0.1:7373/readyz
 ```
 
-## イベント確認
+## Alerts
 
-```bash
-curl -H "x-admin-token: $ADMIN_TOKEN" \
-  "http://127.0.0.1:7373/admin/events?limit=20" | jq .
+Use hysteresis. Do not alert on single-sample spikes.
+
+Required alert ideas:
+
+```promql
+up{job="webhook-gateway"} == 0
+absent(webhook_ingress_total)
+webhook_spool_failed_file_count > 0 for 5m
+webhook_clock_skew_seconds > MAX_CLOCK_SKEW_SECONDS * 0.8 for 5m
 ```
 
-## 再実行
+Prometheus itself must be monitored through a separate path. Gateway cannot detect a failed monitoring system by itself.
 
-```bash
-curl -X POST -H "x-admin-token: $ADMIN_TOKEN" \
-  "http://127.0.0.1:7373/admin/events/<event_id>/replay" | jq .
-```
+## Replay safety
 
-## 事故時の確認順
+Replay cooldown defaults:
 
-### 署名エラー
+- event replay: 300 seconds
+- delivery replay: 60 seconds
+- max delivery requeue per event replay: 100
 
-1. Provider側Secretと `.env` のSecretが一致しているか。
-2. Providerが正しい `/ingress/:slug` に送っているか。
-3. reverse proxyがbodyを変形していないか。
-4. timestampが許容秒数を超えていないか。
-
-### 配送失敗
-
-1. `docker compose logs -f worker`
-2. DBの `deliveries.last_error` を確認
-3. `DEST_*_URL` がWorkerコンテナから到達可能か確認
-4. Downstreamが2xxを返しているか確認
-5. 修復後にreplay
-
-### Spool確認
-
-```bash
-docker compose exec api sh -lc 'ls -la /spool'
-docker compose logs -f worker | grep -i spool
-```
-
-## バックアップ
-
-Postgresが正本です。
-
-```bash
-docker compose exec postgres pg_dump -U webhook webhook_gateway > backup.sql
-```
+Every replay attempt, including rejected attempts, must appear in audit logs.

@@ -13,3 +13,7 @@ export function parseJsonSafe(raw: Buffer): unknown | undefined {
     return undefined;
   }
 }
+
+export function jsonString(value: unknown): string {
+  return JSON.stringify(value ?? null);
+}

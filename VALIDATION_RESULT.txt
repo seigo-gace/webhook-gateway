@@ -1,0 +1,56 @@
+G-ACE Universal Webhook Gateway v1.2.2 validation result
+
+Local validation completed in /mnt/data/webhook-gateway-v122.
+
+Commands executed locally:
+1. npm install --no-audit --no-fund
+   - initial dependency install succeeded
+2. npm run build
+   - initial build failed because ioredis default import was not constructable under NodeNext
+   - fixed by using named Redis import from ioredis
+3. npm run build
+   - success
+4. npm test
+   - success, 12 tests passed
+5. npm audit --audit-level=high
+   - initially failed due to vulnerable express/path-to-regexp, bullmq/uuid, and vitest advisories
+   - fixed by updating dependencies and local lockfile
+6. npm ci --no-audit --no-fund
+   - success in the local ZIP workspace where package-lock.json exists
+7. npm run build
+   - success
+8. npm test
+   - success, 12 tests passed
+9. npm audit --audit-level=high
+   - success, found 0 vulnerabilities
+
+Repository note:
+- The local ZIP artifact includes package-lock.json.
+- The GitHub tree update uses npm install in CI until package-lock.json is added from a server-side clone pass.
+
+Docker validation:
+- docker is not installed in this execution environment, so docker compose config / docker compose E2E could not be executed here.
+- Docker Compose E2E remains required on the target server.
+
+Implemented v1.2.2 P0 coverage:
+- Downstream successMode status_only/status_and_header
+- unknown delivery status with maxAttempts -> dead
+- DELIVERY_TIMEOUT_MS and per-destination timeout
+- replay cooldown and replay audit
+- ingress/admin/replay rate limit
+- webhook_rate_limited_total metric
+- Clock skew readiness check with cache
+- webhook_clock_skew_seconds metric
+- Standard/Stripe multi-signature support
+- Generic HMAC multi-candidate support
+- provider_event_id normalization
+- STORE_RAW_BODY=false default
+- replay from normalized_payload/cloud_event, not body_text
+- Spool import classification: success/duplicate/corrupted/db_error
+- corrupted spool moves to /spool/failed
+- failed spool purge by retention days
+- failed spool metrics
+- sanitization for audit/errors/metrics-facing values
+- config validation at startup
+- exact dependency versions in package.json
+- CI build/test/audit pipeline

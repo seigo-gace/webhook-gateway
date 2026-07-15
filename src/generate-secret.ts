@@ -1,4 +1,2 @@
 import crypto from 'node:crypto';
-
-const raw = crypto.randomBytes(32);
-console.log(`base64:${raw.toString('base64')}`);
+console.log(`base64:${crypto.randomBytes(32).toString('base64')}`);

@@ -17,7 +17,7 @@ ENV NODE_ENV=production
 
 RUN groupadd --system --gid 10001 appuser \
   && useradd --system --uid 10001 --gid appuser --home-dir /app --shell /usr/sbin/nologin appuser \
-  && mkdir -p /app /spool \
+  && mkdir -p /app /spool /spool/failed \
   && chown -R appuser:appuser /app /spool
 
 COPY --chown=appuser:appuser package.json ./package.json

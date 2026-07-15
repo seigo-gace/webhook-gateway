@@ -1,21 +1,24 @@
-# Implementation Notes
+# Implementation Notes v1.2.2
 
-## 技術選定
+## Recovery location
 
-- Express: raw bodyを扱いやすいWebhook受信API
-- PostgreSQL: event ledger / delivery ledger / audit log の正本
-- Redis + BullMQ: retry可能な配送キュー
-- Standard Webhooks形式: Gatewayから内部アプリへの再署名
-- CloudEvents風Envelope: 内部アプリ向けの共通イベント表現
+Recovery sweeper runs only inside Worker. API remains ingress/admin/metrics focused.
 
-## 直接OSS製品を採用しない理由
+## Recovery sequence
 
-Hookdeck Outpost等のOSSは有力ですが、今回の主目的は「外部Providerから入ってくるinbound webhookを各アプリ共通で安全に受ける」ことです。そのため、思想を参考にしつつ、G-ACE向けの独立Gatewayとして実装しています。
+1. Import spool files.
+2. Re-enqueue due queued/retrying/unknown deliveries.
+3. Reset stale delivering deliveries.
+4. Cleanup raw body retention.
+5. Purge failed spool files.
 
-## Multi-architecture
+## Spool import classification
 
-Python WheelではなくNode.js公式イメージを使います。multi-arch配布が必要な場合はDocker Buildxで `linux/amd64` と `linux/arm64` を検証してください。
+- success: imported and removed
+- duplicate: already in DB and removed
+- corrupted: moved to `/spool/failed` and not retried
+- db_error: left for later retry
 
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t gace-webhook-gateway:1.1.1 .
-```
+## Filesystem requirement
+
+Spool locking depends on atomic local rename. Use local ext4/xfs, Docker named volume, encrypted local volume, Kubernetes emptyDir, or hostPath. Avoid network filesystems.
