@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:22-bookworm-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+FROM node:22-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN groupadd --system --gid 10001 appuser \
+  && useradd --system --uid 10001 --gid appuser --home-dir /app --shell /usr/sbin/nologin appuser \
+  && mkdir -p /app /spool \
+  && chown -R appuser:appuser /app /spool
+
+COPY --chown=appuser:appuser package.json ./package.json
+COPY --chown=appuser:appuser --from=deps /app/node_modules ./node_modules
+COPY --chown=appuser:appuser --from=build /app/dist ./dist
+COPY --chown=appuser:appuser config ./config
+COPY --chown=appuser:appuser docs ./docs
+COPY --chown=appuser:appuser scripts ./scripts
+
+USER appuser
+EXPOSE 7373
+CMD ["node", "dist/server.js"]
