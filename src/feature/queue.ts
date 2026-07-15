@@ -1,6 +1,6 @@
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { env } from './env.js';
+import { env } from '../part/env.js';
 
 export const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 export const deliveryQueue = new Queue(env.QUEUE_NAME, { connection: redisConnection as any });

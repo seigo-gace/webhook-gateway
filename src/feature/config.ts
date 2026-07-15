@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { env, optionalEnv } from './env.js';
-import type { GatewayConfig } from './types.js';
+import { env, optionalEnv } from '../part/env.js';
+import type { GatewayConfig } from '../part/types.js';
 
 export function loadGatewayConfig(): GatewayConfig {
   const file = path.resolve(process.cwd(), 'config/webhooks.json');

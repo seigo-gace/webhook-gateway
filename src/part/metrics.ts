@@ -59,3 +59,28 @@ export const spoolPurgedCounter = new client.Counter({
   help: 'Purged failed spool files',
   registers: [registry]
 });
+
+export const tgserverLogSentCounter = new client.Counter({
+  name: 'webhook_tgserver_log_sent_total',
+  help: 'Logs successfully sent to TGServer',
+  registers: [registry]
+});
+
+export const tgserverLogFlushFailedCounter = new client.Counter({
+  name: 'webhook_tgserver_log_flush_failed_total',
+  help: 'TGServer log flush failures',
+  registers: [registry]
+});
+
+export const tgserverLogDroppedCounter = new client.Counter({
+  name: 'webhook_tgserver_log_dropped_total',
+  help: 'TGServer log events dropped from local queue',
+  labelNames: ['reason'],
+  registers: [registry]
+});
+
+export const tgserverLogQueueGauge = new client.Gauge({
+  name: 'webhook_tgserver_log_queue_size',
+  help: 'Current queued TGServer log events',
+  registers: [registry]
+});

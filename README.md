@@ -2,7 +2,7 @@
 
 Independent inbound webhook gateway for safely receiving third-party webhooks, verifying provider signatures, storing events durably, queueing downstream delivery, retrying failures, replaying dead deliveries, and auditing operations.
 
-Current hardened design line: **v1.2.2**.
+Current hardened design line: **v1.2.2 + Server Core five-stage structure**.
 
 ## Purpose
 
@@ -25,6 +25,17 @@ External Provider -> /ingress/:slug -> Gateway API -> PostgreSQL -> Redis/BullMQ
 - Replay API has cooldowns and audit logging.
 - Clock skew is reflected in `/readyz`.
 - `STORE_RAW_BODY=false` by default; replay relies on normalized payload and CloudEvent, not raw body text.
+
+
+## Server Core five-stage structure
+
+The code is organized by the Server Core five-stage modular architecture:
+
+```text
+Part -> Feature -> Component -> System -> Application
+```
+
+Layer mapping is documented in `docs/SERVER_CORE_ALIGNMENT.md`. Runtime entrypoints remain `src/server.ts` and `src/worker.ts`, but they are thin Application launchers only.
 
 ## Runtime hardening
 
@@ -60,16 +71,14 @@ curl http://127.0.0.1:7373/readyz
 
 ## CI
 
-CI currently runs:
+CI runs:
 
 ```text
-npm install --no-audit --no-fund
+npm ci
 npm run build
 npm test
 npm audit --audit-level=high
 ```
-
-`package-lock.json` was generated and validated in the local v1.2.2 ZIP artifact. Add it in the server-side validation pass before switching CI to `npm ci`.
 
 ## Production checklist
 
@@ -83,3 +92,30 @@ npm audit --audit-level=high
 ## License
 
 MIT
+
+## TGServer Log Aggregation
+
+Gateway operational logs are aggregated to TGServer through a non-blocking sanitized log sink. The runtime always writes structured console logs and, when `LOG_TO_TGSERVER=true` and `TGSERVER_LOG_URL` is configured, batches sanitized events to TGServer. The log sink never blocks provider `202` responses; if TGServer is unavailable, logs stay in a bounded in-memory queue and are dropped only after `TGSERVER_LOG_QUEUE_LIMIT` is exceeded.
+
+Configuration:
+
+```env
+LOG_TO_TGSERVER=true
+TGSERVER_LOG_URL=http://tgserver:7374/internal/logs
+TGSERVER_LOG_SECRET=replace_with_tgserver_log_secret
+TGSERVER_LOG_MIN_LEVEL=info
+TGSERVER_LOG_TIMEOUT_MS=1000
+TGSERVER_LOG_FLUSH_INTERVAL_MS=2000
+TGSERVER_LOG_BATCH_SIZE=50
+TGSERVER_LOG_QUEUE_LIMIT=1000
+```
+
+Metrics:
+
+```text
+webhook_tgserver_log_sent_total
+webhook_tgserver_log_flush_failed_total
+webhook_tgserver_log_dropped_total
+webhook_tgserver_log_queue_size
+```
+

@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { Request } from 'express';
-import { decodeSecret, hmacSha256, timingSafeEqual } from './crypto.js';
-import { getHeader, parseJsonSafe } from './http.js';
-import { env, optionalEnv, requireEnv } from './env.js';
-import { normalizeProviderEventId } from './normalizer.js';
-import type { SourceConfig, VerificationResult } from './types.js';
+import { decodeSecret, hmacSha256, timingSafeEqual } from '../part/crypto.js';
+import { getHeader, parseJsonSafe } from '../part/http.js';
+import { env, optionalEnv, requireEnv } from '../part/env.js';
+import { normalizeProviderEventId } from '../part/normalizer.js';
+import type { SourceConfig, VerificationResult } from '../part/types.js';
 
 export function verifyInbound(req: Request, source: SourceConfig, raw: Buffer): VerificationResult {
   const tolerance = source.toleranceSeconds ?? env.DEFAULT_TOLERANCE_SECONDS;

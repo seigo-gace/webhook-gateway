@@ -1,38 +1,38 @@
-G-ACE Universal Webhook Gateway v1.2.2 validation result
+G-ACE Universal Webhook Gateway v1.2.2 Server Core five-stage + TGServer log validation result
 
-Local validation completed in /mnt/data/webhook-gateway-v122.
+Local validation completed in /mnt/data/webhook-gateway-v123-5stage after rebuilding the source layout into the Server Core five-stage architecture and adding TGServer log aggregation.
 
-Commands executed locally:
-1. npm install --no-audit --no-fund
-   - initial dependency install succeeded
+Architecture target:
+- Part -> Feature -> Component -> System -> Application
+
+Commands executed after the rebuild:
+1. npm ci --no-audit --no-fund
+   - success in local ZIP workspace with package-lock.json
 2. npm run build
-   - initial build failed because ioredis default import was not constructable under NodeNext
-   - fixed by using named Redis import from ioredis
-3. npm run build
    - success
-4. npm test
-   - success, 12 tests passed
-5. npm audit --audit-level=high
-   - initially failed due to vulnerable express/path-to-regexp, bullmq/uuid, and vitest advisories
-   - fixed by updating dependencies and local lockfile
-6. npm ci --no-audit --no-fund
-   - success in the local ZIP workspace where package-lock.json exists
-7. npm run build
-   - success
-8. npm test
-   - success, 12 tests passed
-9. npm audit --audit-level=high
+3. npm test
+   - success, 13 tests passed
+4. npm audit --audit-level=high
    - success, found 0 vulnerabilities
 
-Repository note:
-- The local ZIP artifact includes package-lock.json.
-- The GitHub tree update uses npm install in CI until package-lock.json is added from a server-side clone pass.
+Repository connector note:
+- GitHub connector tree update does not include package-lock.json in this commit due payload size limits.
+- CI uses npm install --no-audit --no-fund in this commit.
+- The validated ZIP artifact retains package-lock.json; add it from a server/PC clone pass when deterministic npm ci is required on main.
+
+Structure verification:
+- src/part exists and contains single-responsibility primitives.
+- src/feature exists and contains config, verifier, DB ledger, queue, spool, and TGServer log features.
+- src/component exists and contains routing and delivery composition logic.
+- src/system exists and contains API and Worker runtime systems.
+- src/application exists and contains application launch modules.
+- src/server.ts and src/worker.ts are thin launchers only.
 
 Docker validation:
 - docker is not installed in this execution environment, so docker compose config / docker compose E2E could not be executed here.
-- Docker Compose E2E remains required on the target server.
+- Docker Compose E2E remains mandatory on the target server after GitHub push.
 
-Implemented v1.2.2 P0 coverage:
+Preserved v1.2.2 P0 coverage:
 - Downstream successMode status_only/status_and_header
 - unknown delivery status with maxAttempts -> dead
 - DELIVERY_TIMEOUT_MS and per-destination timeout
@@ -46,11 +46,12 @@ Implemented v1.2.2 P0 coverage:
 - provider_event_id normalization
 - STORE_RAW_BODY=false default
 - replay from normalized_payload/cloud_event, not body_text
-- Spool import classification: success/duplicate/corrupted/db_error
-- corrupted spool moves to /spool/failed
-- failed spool purge by retention days
-- failed spool metrics
 - sanitization for audit/errors/metrics-facing values
 - config validation at startup
-- exact dependency versions in package.json
-- CI build/test/audit pipeline
+
+TGServer log aggregation:
+- src/part/logging-types.ts
+- src/feature/tgserver-log.ts
+- API and Worker systems emit sanitized operational logs
+- Sink is non-blocking, batched, bounded, and metric-instrumented
+- Provider 202 path is not blocked by TGServer availability

@@ -12,7 +12,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "audit:high": "npm audit --audit-level=high",
-    "secret": "tsx src/generate-secret.ts"
+    "secret": "tsx src/application/generate-secret.ts"
   },
   "dependencies": {
     "bullmq": "5.80.4",

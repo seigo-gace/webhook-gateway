@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { env } from './env.js';
-import { sanitizeObject } from './sanitize.js';
+import { env } from '../part/env.js';
+import { sanitizeObject } from '../part/sanitize.js';
 
 export interface SpoolPayload {
   receivedAt: string;

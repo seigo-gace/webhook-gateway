@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
-import { env } from './env.js';
-import { sanitizeObject, sanitizeText } from './sanitize.js';
-import type { DeliveryStatus, DestinationConfig, RouteConfig } from './types.js';
+import { env } from '../part/env.js';
+import { sanitizeObject, sanitizeText } from '../part/sanitize.js';
+import type { DeliveryStatus, DestinationConfig, RouteConfig } from '../part/types.js';
 
 export const pool = new Pool({ connectionString: env.DATABASE_URL });
 
