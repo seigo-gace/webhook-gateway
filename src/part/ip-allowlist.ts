@@ -19,6 +19,19 @@ export function normalizeIp(ip: string | undefined): string | null {
   return net.isIP(cleaned) ? cleaned : null;
 }
 
+export function isValidAllowlistRule(rule: string): boolean {
+  const trimmed = rule.trim();
+  if (!trimmed) return false;
+  if (trimmed === '*') return true;
+  if (normalizeIp(trimmed)) return true;
+  const [range, prefixRaw] = trimmed.split('/', 2);
+  if (!range || !prefixRaw) return false;
+  const normalizedRange = normalizeIp(range);
+  if (!normalizedRange || net.isIP(normalizedRange) !== 4) return false;
+  const prefix = Number(prefixRaw);
+  return Number.isInteger(prefix) && prefix >= 0 && prefix <= 32;
+}
+
 function matchesRule(ip: string, rule: string): boolean {
   if (rule === '*') return true;
   const normalizedRule = normalizeIp(rule);
