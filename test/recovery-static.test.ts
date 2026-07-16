@@ -40,6 +40,14 @@ describe('production recovery static guards', () => {
     expect(worker).toContain('delivery_skipped_status');
   });
 
+  it('worker skips missing or disabled destinations instead of retry-looping them', () => {
+    const worker = read('src/system/worker-system.ts');
+    const processDelivery = functionBody(worker, 'processDelivery');
+    expect(processDelivery).toContain("SET status='skipped'");
+    expect(processDelivery).toContain('delivery_destination_skipped');
+    expect(processDelivery).not.toContain('throw new Error(`Destination not found');
+  });
+
   it('worker claims deliveries atomically before dispatch', () => {
     const worker = read('src/system/worker-system.ts');
     const processDelivery = functionBody(worker, 'processDelivery');
