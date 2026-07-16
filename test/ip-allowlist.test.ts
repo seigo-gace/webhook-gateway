@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isIpAllowed, normalizeIp, splitAllowlist } from '../src/part/ip-allowlist.js';
+import { isIpAllowed, isValidAllowlistRule, normalizeIp, splitAllowlist } from '../src/part/ip-allowlist.js';
 
 describe('IP allowlist helpers', () => {
   it('allows all when the allowlist is empty', () => {
@@ -16,6 +16,14 @@ describe('IP allowlist helpers', () => {
     expect(isIpAllowed('203.0.113.5', ['203.0.113.5'])).toBe(true);
     expect(isIpAllowed('203.0.113.5', ['203.0.113.0/24'])).toBe(true);
     expect(isIpAllowed('203.0.114.5', ['203.0.113.0/24'])).toBe(false);
+  });
+
+  it('validates allowlist rules before runtime use', () => {
+    expect(isValidAllowlistRule('*')).toBe(true);
+    expect(isValidAllowlistRule('127.0.0.1')).toBe(true);
+    expect(isValidAllowlistRule('10.0.0.0/8')).toBe(true);
+    expect(isValidAllowlistRule('10.0.0.0/99')).toBe(false);
+    expect(isValidAllowlistRule('not-an-ip')).toBe(false);
   });
 
   it('splits comma-separated env allowlists safely', () => {
