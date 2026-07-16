@@ -71,10 +71,13 @@ npm install
 npm run secret
 npm run build
 npm test
+# Before starting with NODE_ENV=production, replace all replace_with_* and example values in .env.
 docker compose up -d --build
 curl http://127.0.0.1:7373/healthz
 curl http://127.0.0.1:7373/readyz
 ```
+
+Production startup rejects placeholder secrets, placeholder URLs, short admin tokens, and `SPOOL_STORAGE_MODE=plain_dev`.
 
 ## CI
 
@@ -91,6 +94,7 @@ npm audit --audit-level=high
 
 - Use encrypted volume for `/spool`.
 - Keep `/admin/*`, `/metrics`, and `/readyz` private.
+- Replace every `replace_with_*`, `example.com`, `example-app`, and default `webhook_password` value before production startup.
 - Set `ADMIN_ALLOWED_CIDRS` when admin endpoints are reachable through a shared network path.
 - Set per-source `allowedCidrs` in `config/webhooks.json` when providers publish stable webhook source ranges.
 - Configure Prometheus absent alerts and monitor Prometheus itself.
