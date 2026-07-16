@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { env, optionalEnv } from '../part/env.js';
 import { isValidAllowlistRule, splitAllowlist } from '../part/ip-allowlist.js';
+import { validateDestinationUrl } from '../part/url-security.js';
 import type { GatewayConfig } from '../part/types.js';
 
 export function loadGatewayConfig(): GatewayConfig {
@@ -60,6 +61,7 @@ export function validateGatewayConfig(config: GatewayConfig): void {
     const url = optionalEnv(destination.urlEnv);
     if (!url) throw new Error(`destination ${destination.id} urlEnv ${destination.urlEnv} is missing or empty`);
     validateProductionValue(destination.urlEnv, url, { minLength: 8 });
+    validateDestinationUrl(url, { allowPrivateNetwork: destination.allowPrivateNetwork === true });
     if (destination.signingSecretEnv) {
       const signingSecret = optionalEnv(destination.signingSecretEnv);
       if (!signingSecret) throw new Error(`destination ${destination.id} signingSecretEnv ${destination.signingSecretEnv} is missing or empty`);
@@ -70,6 +72,12 @@ export function validateGatewayConfig(config: GatewayConfig): void {
     }
     if (destination.timeoutMs !== undefined && (!Number.isInteger(destination.timeoutMs) || destination.timeoutMs < 1)) {
       throw new Error(`destination ${destination.id} timeoutMs must be an integer >= 1`);
+    }
+    if (destination.circuitBreaker !== undefined) {
+      const threshold = destination.circuitBreaker.failureThreshold;
+      const openSeconds = destination.circuitBreaker.openSeconds;
+      if (threshold !== undefined && (!Number.isInteger(threshold) || threshold < 1)) throw new Error(`destination ${destination.id} circuitBreaker.failureThreshold must be an integer >= 1`);
+      if (openSeconds !== undefined && (!Number.isInteger(openSeconds) || openSeconds < 1)) throw new Error(`destination ${destination.id} circuitBreaker.openSeconds must be an integer >= 1`);
     }
     if (destination.headers !== undefined && (typeof destination.headers !== 'object' || destination.headers === null || Array.isArray(destination.headers))) {
       throw new Error(`destination ${destination.id} headers must be an object`);
