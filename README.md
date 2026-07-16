@@ -18,10 +18,10 @@ External Provider -> /ingress/:slug -> Gateway API -> PostgreSQL -> Redis/BullMQ
 - Stable provider event IDs are required for duplicate suppression; signed events without a usable provider ID are rejected.
 - Raw body is preserved in memory for signature verification.
 - PostgreSQL is the source of truth; Redis/BullMQ is only the delivery transport.
-- Provider response is fast: Gateway returns `202` after verification and durable event/delivery registration, not after downstream completion.
+- Provider response is fast: Gateway returns `202` after verification, durable event storage, and durable delivery-row creation; Redis enqueue is deferred and never required for provider ACK.
 - If PostgreSQL is unavailable but emergency spool succeeds, Gateway returns `202` without exposing internal spool paths.
 - If both PostgreSQL and emergency spool are unavailable, Gateway returns `503` so the provider can retry.
-- Redis enqueue is best-effort with timeout; recovery rebuilds due jobs from PostgreSQL.
+- Redis enqueue is best-effort; recovery rebuilds due jobs from PostgreSQL.
 - Delivery is at-least-once; downstream idempotency is mandatory.
 - Worker dispatch claims deliveries atomically so stale duplicate jobs cannot re-deliver `dead`, `skipped`, or already-claimed rows.
 - Admin API is read-only plus replay only. No config or secret mutation API exists in v1.2.2.
@@ -58,7 +58,7 @@ Spool is a recovery ledger, not an operational log. Headers are sanitized before
 
 - Ingress P95: <= 300ms
 - Ingress P99: <= 1000ms
-- Redis enqueue timeout: 1500ms
+- Redis enqueue is deferred from provider ACK path
 - Worker concurrency: configurable by `WORKER_CONCURRENCY`
 - Spool import batch: configurable by `SPOOL_IMPORT_BATCH_SIZE`
 - Recovery batch: configurable by `RECOVERY_DELIVERY_BATCH_SIZE`
