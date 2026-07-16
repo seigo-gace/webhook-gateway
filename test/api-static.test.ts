@@ -14,6 +14,13 @@ describe('API production static guards', () => {
     expect(api).toContain('ingress_ip_denied');
   });
 
+  it('keeps provider ACK fast by deferring Redis enqueue after durable rows exist', () => {
+    const api = read('src/system/api-system.ts');
+    expect(api).toContain('enqueueDeliveryDeferred');
+    expect(api).toContain("enqueueMode: 'deferred'");
+    expect(api).not.toContain('const enqueueResults = await Promise.allSettled(deliveryIds.map((id) => enqueueDeliveryBestEffort(id)))');
+  });
+
   it('handles emergency spool failure explicitly and does not expose the spool path to providers', () => {
     const api = read('src/system/api-system.ts');
     expect(api).toContain('ingress_spool_failed');
