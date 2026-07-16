@@ -26,6 +26,8 @@ export const env = {
   TGSERVER_LOG_FLUSH_INTERVAL_MS: intEnv('TGSERVER_LOG_FLUSH_INTERVAL_MS', 2000),
   TGSERVER_LOG_BATCH_SIZE: intEnv('TGSERVER_LOG_BATCH_SIZE', 50),
   TGSERVER_LOG_QUEUE_LIMIT: intEnv('TGSERVER_LOG_QUEUE_LIMIT', 1000),
+  TRUST_PROXY: boolEnv('TRUST_PROXY', false),
+  ADMIN_ALLOWED_CIDRS: process.env.ADMIN_ALLOWED_CIDRS ?? '',
   DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://webhook:webhook_password@127.0.0.1:5432/webhook_gateway',
   REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379/0',
   QUEUE_NAME: process.env.QUEUE_NAME ?? 'webhook-deliveries',
