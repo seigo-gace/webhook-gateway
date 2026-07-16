@@ -26,9 +26,20 @@ export async function writeSpoolFile(payload: SpoolPayload): Promise<string> {
   const id = `${Date.now()}-${crypto.randomUUID()}`;
   const tmp = path.join(env.SPOOL_DIR, `${id}.json.tmp`);
   const final = path.join(env.SPOOL_DIR, `${id}.json`);
-  await fs.writeFile(tmp, JSON.stringify(sanitizeObject(payload), null, 2), { flag: 'wx', mode: 0o600 });
+  await fs.writeFile(tmp, JSON.stringify(serializeSpoolPayload(payload), null, 2), { flag: 'wx', mode: 0o600 });
   await fs.rename(tmp, final);
   return final;
+}
+
+export function serializeSpoolPayload(payload: SpoolPayload): SpoolPayload {
+  // Spool is a recovery ledger, not an operational log. Do not sanitize body,
+  // verified metadata, or CloudEvent data because doing so can corrupt replay.
+  // Only headers are sanitized because they are not required for import and may
+  // carry Authorization/Cookie material from providers or proxies.
+  return {
+    ...payload,
+    headers: sanitizeObject(payload.headers)
+  };
 }
 
 export async function listSpoolFiles(): Promise<string[]> {
