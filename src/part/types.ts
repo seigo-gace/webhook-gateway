@@ -12,6 +12,7 @@ export type DataMode = 'json_object' | 'base64_raw';
 export type SuccessMode = 'status_only' | 'status_and_header';
 export type UnknownPolicy = 'retry_then_dead' | 'dead_immediately' | 'treat_2xx_as_delivered';
 export type DeliveryStatus = 'queued' | 'delivering' | 'delivered' | 'retrying' | 'unknown' | 'dead' | 'skipped';
+export type RetryClass = 'normal' | 'throttle' | 'infrastructure' | 'client_error' | 'gone' | 'unknown';
 
 export interface SourceConfig {
   id: string;
@@ -54,6 +55,11 @@ export interface DestinationConfig {
   maxAttempts: number;
   enabled: boolean;
   headers?: Record<string, string>;
+  allowPrivateNetwork?: boolean;
+  circuitBreaker?: {
+    failureThreshold?: number;
+    openSeconds?: number;
+  };
 }
 
 export interface RouteConfig {
