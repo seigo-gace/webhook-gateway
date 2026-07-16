@@ -34,6 +34,12 @@ describe('production recovery static guards', () => {
     }
   });
 
+  it('worker only delivers queued, retrying, or unknown rows', () => {
+    const worker = read('src/system/worker-system.ts');
+    expect(worker).toContain("const deliverableStatuses = new Set(['queued', 'retrying', 'unknown'])");
+    expect(worker).toContain('delivery_skipped_status');
+  });
+
   it('worker resets stale delivering rows before selecting due deliveries inside recoverySweep', () => {
     const worker = read('src/system/worker-system.ts');
     const recovery = functionBody(worker, 'recoverySweep');
