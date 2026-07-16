@@ -56,8 +56,18 @@ async function processDelivery(deliveryId: string): Promise<void> {
   const destination = config.destinations.find((item) => item.id === row.destination_id && item.enabled);
   if (!destination) throw new Error(`Destination not found: ${row.destination_id}`);
 
-  await pool.query(`UPDATE deliveries SET status='delivering', attempt_count=attempt_count+1, updated_at=now() WHERE id=$1`, [deliveryId]);
-  const attempt = Number(row.attempt_count ?? 0) + 1;
+  const claim = await pool.query(
+    `UPDATE deliveries
+     SET status='delivering', attempt_count=attempt_count+1, updated_at=now()
+     WHERE id=$1 AND status IN ('queued','retrying','unknown')
+     RETURNING attempt_count`,
+    [deliveryId]
+  );
+  if (!claim.rows[0]) {
+    logGatewayEvent({ level: 'info', event: 'delivery_claim_skipped', component: 'worker-system', message: 'Delivery job skipped because another worker claimed or completed it first', eventId: row.event_id, deliveryId, details: { previousStatus: row.status } });
+    return;
+  }
+  const attempt = Number(claim.rows[0].attempt_count ?? 1);
   const body = buildDeliveryPayload(destination, row.body_text, row.normalized_payload, row.cloud_event);
   const headers: Record<string, string> = {
     'content-type': destination.payloadMode === 'raw' ? 'application/octet-stream' : 'application/json',
