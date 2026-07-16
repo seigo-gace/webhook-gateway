@@ -142,6 +142,18 @@ export async function updateDeliveryFailure(input: {
   );
 }
 
+export async function purgeExpiredEventBodies(retentionDays: number): Promise<number> {
+  if (!Number.isFinite(retentionDays) || retentionDays < 0) throw new Error('BODY_RETENTION_DAYS must be >= 0');
+  const result = await pool.query(
+    `UPDATE events
+     SET body_text=NULL, updated_at=now()
+     WHERE body_text IS NOT NULL
+       AND received_at < now() - ($1 || ' days')::interval`,
+    [String(retentionDays)]
+  );
+  return result.rowCount ?? 0;
+}
+
 export async function checkReplayCooldown(resourceKey: string, cooldownSeconds: number): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
   const result = await pool.query('SELECT last_replayed_at FROM replay_locks WHERE resource_key=$1', [resourceKey]);
   const last = result.rows[0]?.last_replayed_at ? new Date(result.rows[0].last_replayed_at).getTime() : 0;
