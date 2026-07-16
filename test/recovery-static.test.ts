@@ -5,6 +5,13 @@ function read(path: string): string {
   return fs.readFileSync(path, 'utf8');
 }
 
+function functionBody(source: string, functionName: string): string {
+  const start = source.indexOf(`async function ${functionName}`);
+  expect(start).toBeGreaterThan(-1);
+  const nextFunction = source.indexOf('\nasync function ', start + 1);
+  return nextFunction === -1 ? source.slice(start) : source.slice(start, nextFunction);
+}
+
 describe('production recovery static guards', () => {
   it('worker recovery imports emergency spool files instead of only counting them', () => {
     const worker = read('src/system/worker-system.ts');
@@ -27,13 +34,17 @@ describe('production recovery static guards', () => {
     }
   });
 
-  it('worker resets stale delivering rows before selecting due deliveries', () => {
+  it('worker resets stale delivering rows before selecting due deliveries inside recoverySweep', () => {
     const worker = read('src/system/worker-system.ts');
-    const staleReset = worker.indexOf("status='delivering'");
-    const dueSelect = worker.indexOf("status IN ('queued','retrying','unknown')");
+    const recovery = functionBody(worker, 'recoverySweep');
+    const staleReset = recovery.indexOf("status='delivering'");
+    const spoolImport = recovery.indexOf('importSpoolBatch');
+    const dueSelect = recovery.indexOf("status IN ('queued','retrying','unknown')");
     expect(staleReset).toBeGreaterThan(-1);
+    expect(spoolImport).toBeGreaterThan(-1);
     expect(dueSelect).toBeGreaterThan(-1);
-    expect(staleReset).toBeLessThan(dueSelect);
+    expect(staleReset).toBeLessThan(spoolImport);
+    expect(spoolImport).toBeLessThan(dueSelect);
   });
 
   it('ci keeps the GitHub-side validation loop active', () => {
