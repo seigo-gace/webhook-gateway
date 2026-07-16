@@ -40,6 +40,14 @@ describe('production recovery static guards', () => {
     expect(worker).toContain('delivery_skipped_status');
   });
 
+  it('worker claims deliveries atomically before dispatch', () => {
+    const worker = read('src/system/worker-system.ts');
+    const processDelivery = functionBody(worker, 'processDelivery');
+    expect(processDelivery).toContain("WHERE id=$1 AND status IN ('queued','retrying','unknown')");
+    expect(processDelivery).toContain('RETURNING attempt_count');
+    expect(processDelivery).toContain('delivery_claim_skipped');
+  });
+
   it('worker resets stale delivering rows before selecting due deliveries inside recoverySweep', () => {
     const worker = read('src/system/worker-system.ts');
     const recovery = functionBody(worker, 'recoverySweep');
