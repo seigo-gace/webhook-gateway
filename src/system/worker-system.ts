@@ -3,7 +3,7 @@ import { Worker } from 'bullmq';
 import { env, requireEnv } from '../part/env.js';
 import { loadGatewayConfig, validateGatewayConfig } from '../feature/config.js';
 import { decodeSecret, hmacSha256, sha256Hex } from '../part/crypto.js';
-import { migrate, closeDb, pool, updateDeliveryFailure, insertEvent, createDeliveries } from '../feature/db.js';
+import { migrate, closeDb, pool, updateDeliveryFailure, insertEvent, createDeliveries, purgeExpiredEventBodies } from '../feature/db.js';
 import { closeQueue, enqueueDeliveryBestEffort, redisConnection } from '../feature/queue.js';
 import { countSpoolFiles, listSpoolFiles, lockSpoolFile, readSpoolFile, removeSpoolFile, moveSpoolFileToFailed, unlockSpoolFile, purgeFailedSpoolFiles } from '../feature/spool.js';
 import { getMatchingRoutes } from '../component/routing.js';
@@ -212,6 +212,10 @@ async function importSpoolBatch(): Promise<Record<SpoolSweepResult, number>> {
 async function recoverySweep(): Promise<void> {
   await pool.query(`UPDATE deliveries SET status='retrying', updated_at=now() WHERE status='delivering' AND updated_at < now() - ($1 || ' seconds')::interval`, [String(env.STALE_DELIVERING_SECONDS)]);
   await importSpoolBatch();
+  const purgedBodies = await purgeExpiredEventBodies(env.BODY_RETENTION_DAYS);
+  if (purgedBodies > 0) {
+    logGatewayEvent({ level: 'info', event: 'raw_body_retention_purged', component: 'worker-system', message: 'Expired raw event bodies were purged', details: { purged: purgedBodies, retentionDays: env.BODY_RETENTION_DAYS } });
+  }
   const due = await pool.query(`SELECT id FROM deliveries WHERE status IN ('queued','retrying','unknown') AND (next_attempt_at IS NULL OR next_attempt_at <= now()) LIMIT $1`, [env.RECOVERY_DELIVERY_BATCH_SIZE]);
   await Promise.allSettled(due.rows.map((row) => enqueueDeliveryBestEffort(row.id)));
   const counts = await countSpoolFiles();
