@@ -8,6 +8,12 @@ function intEnv(name: string, fallback: number): number {
   return n;
 }
 
+function legacyRecoveryIntervalMs(): number {
+  return process.env.RECOVERY_INTERVAL_MS
+    ? intEnv('RECOVERY_INTERVAL_MS', 30000)
+    : intEnv('RECOVERY_SWEEP_INTERVAL_MS', 30000);
+}
+
 function boolEnv(name: string, fallback: boolean): boolean {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -58,7 +64,7 @@ export const env = {
   SPOOL_RETENTION_DAYS: intEnv('SPOOL_RETENTION_DAYS', 7),
   SPOOL_FAILED_RETENTION_DAYS: intEnv('SPOOL_FAILED_RETENTION_DAYS', 7),
   SPOOL_IMPORT_BATCH_SIZE: intEnv('SPOOL_IMPORT_BATCH_SIZE', 50),
-  RECOVERY_INTERVAL_MS: intEnv('RECOVERY_INTERVAL_MS', intEnv('RECOVERY_SWEEP_INTERVAL_MS', 30000)),
+  RECOVERY_INTERVAL_MS: legacyRecoveryIntervalMs(),
   RECOVERY_DELIVERY_BATCH_SIZE: intEnv('RECOVERY_DELIVERY_BATCH_SIZE', 100),
   STALE_DELIVERING_SECONDS: intEnv('STALE_DELIVERING_SECONDS', 120),
   WORKER_CONCURRENCY: intEnv('WORKER_CONCURRENCY', 10),
