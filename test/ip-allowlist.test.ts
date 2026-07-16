@@ -23,6 +23,7 @@ describe('IP allowlist helpers', () => {
     expect(isValidAllowlistRule('127.0.0.1')).toBe(true);
     expect(isValidAllowlistRule('10.0.0.0/8')).toBe(true);
     expect(isValidAllowlistRule('10.0.0.0/99')).toBe(false);
+    expect(isValidAllowlistRule('10.0.0.0/8/extra')).toBe(false);
     expect(isValidAllowlistRule('not-an-ip')).toBe(false);
   });
 
