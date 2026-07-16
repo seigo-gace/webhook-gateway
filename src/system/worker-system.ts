@@ -54,7 +54,16 @@ async function processDelivery(deliveryId: string): Promise<void> {
     return;
   }
   const destination = config.destinations.find((item) => item.id === row.destination_id && item.enabled);
-  if (!destination) throw new Error(`Destination not found: ${row.destination_id}`);
+  if (!destination) {
+    await pool.query(
+      `UPDATE deliveries
+       SET status='skipped', last_error=$2, updated_at=now()
+       WHERE id=$1 AND status IN ('queued','retrying','unknown')`,
+      [deliveryId, `Destination not found or disabled: ${String(row.destination_id)}`]
+    );
+    logGatewayEvent({ level: 'warn', event: 'delivery_destination_skipped', component: 'worker-system', message: 'Delivery skipped because destination is missing or disabled', eventId: row.event_id, deliveryId, destinationId: row.destination_id });
+    return;
+  }
 
   const claim = await pool.query(
     `UPDATE deliveries
