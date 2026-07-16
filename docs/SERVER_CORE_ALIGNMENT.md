@@ -100,7 +100,7 @@ Part must not import Feature, Component, System, or Application.
 After this restructuring, the following checks must pass:
 
 ```text
-npm ci --no-audit --no-fund
+npm install --no-audit --no-fund
 npm run build
 npm test
 npm audit --audit-level=high
@@ -131,4 +131,3 @@ webhook_tgserver_log_flush_failed_total
 webhook_tgserver_log_dropped_total
 webhook_tgserver_log_queue_size
 ```
-
