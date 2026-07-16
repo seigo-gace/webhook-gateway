@@ -12,7 +12,7 @@ import { getMatchingRoutes } from '../component/routing.js';
 import { FixedWindowRateLimiter } from '../part/rateLimit.js';
 import { checkClockSkew } from '../part/clock.js';
 import { isIpAllowed, splitAllowlist } from '../part/ip-allowlist.js';
-import { sanitizeObject, safeMetricLabel } from '../part/sanitize.js';
+import { sanitizeObject, safeMetricLabel, sanitizeText } from '../part/sanitize.js';
 import { clockSkewCheckFailedCounter, clockSkewGauge, ingressCounter, rateLimitedCounter, registry, spoolFailedFileGauge, spoolFileGauge } from '../part/metrics.js';
 import { logGatewayEvent, tgServerLogSink } from '../feature/tgserver-log.js';
 
@@ -167,10 +167,16 @@ app.post('/ingress/:slug', express.raw({ type: '*/*', limit: env.MAX_BODY_BYTES 
     logGatewayEvent({ level: 'info', event: 'ingress_accepted', component: 'api-system', message: 'Webhook accepted and durable delivery rows created', eventId: event.id, sourceId: source.id, details: { provider: source.provider, eventType: verified.eventType, deliveries: deliveryIds.length, enqueued } });
     res.status(202).json({ ok: true, duplicate: false, eventId: event.id, deliveries: deliveryIds.length, enqueued });
   } catch (err: any) {
-    const file = await writeSpoolFile({ receivedAt: new Date().toISOString(), source, headers: sanitizeObject(req.headers), body: raw.toString('utf8'), verified, cloudEvent });
-    ingressCounter.inc({ source: safeMetricLabel(source.id), provider: source.provider, result: 'spooled' });
-    logGatewayEvent({ level: 'error', event: 'ingress_spooled', component: 'api-system', message: 'Webhook was spooled after durable DB path failed', sourceId: source.id, details: { provider: source.provider, spoolFile: file } });
-    res.status(202).json({ ok: true, spooled: true, file });
+    try {
+      const file = await writeSpoolFile({ receivedAt: new Date().toISOString(), source, headers: sanitizeObject(req.headers), body: raw.toString('utf8'), verified, cloudEvent });
+      ingressCounter.inc({ source: safeMetricLabel(source.id), provider: source.provider, result: 'spooled' });
+      logGatewayEvent({ level: 'error', event: 'ingress_spooled', component: 'api-system', message: 'Webhook was spooled after durable DB path failed', sourceId: source.id, details: { provider: source.provider, spoolFile: file, dbError: sanitizeText(err, 300) } });
+      return res.status(202).json({ ok: true, spooled: true });
+    } catch (spoolError) {
+      ingressCounter.inc({ source: safeMetricLabel(source.id), provider: source.provider, result: 'spool_failed' });
+      logGatewayEvent({ level: 'error', event: 'ingress_spool_failed', component: 'api-system', message: 'Webhook could not be persisted to DB or emergency spool', sourceId: source.id, details: { provider: source.provider, dbError: sanitizeText(err, 300), spoolError: sanitizeText(spoolError, 300) } });
+      return res.status(503).json({ ok: false, error: 'durable storage unavailable' });
+    }
   }
 });
 
