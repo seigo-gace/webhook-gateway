@@ -6,7 +6,7 @@ import { loadGatewayConfig, validateGatewayConfig } from '../feature/config.js';
 import { verifyInbound } from '../feature/verifiers.js';
 import { sha256Hex } from '../part/crypto.js';
 import { migrate, insertEvent, createDeliveries, audit, closeDb, pool, checkReplayCooldown } from '../feature/db.js';
-import { enqueueDeliveryBestEffort, closeQueue, redisConnection } from '../feature/queue.js';
+import { enqueueDeliveryBestEffort, enqueueDeliveryDeferred, closeQueue, redisConnection } from '../feature/queue.js';
 import { writeSpoolFile, countSpoolFiles } from '../feature/spool.js';
 import { getMatchingRoutes } from '../component/routing.js';
 import { FixedWindowRateLimiter } from '../part/rateLimit.js';
@@ -161,11 +161,10 @@ app.post('/ingress/:slug', express.raw({ type: '*/*', limit: env.MAX_BODY_BYTES 
     }
     const routes = getMatchingRoutes(config.routes, source.id, verified.eventType);
     const deliveryIds = await createDeliveries(event.id, routes, config.destinations);
-    const enqueueResults = await Promise.allSettled(deliveryIds.map((id) => enqueueDeliveryBestEffort(id)));
-    const enqueued = enqueueResults.filter((result) => result.status === 'fulfilled' && result.value === true).length;
+    deliveryIds.forEach((id) => enqueueDeliveryDeferred(id));
     ingressCounter.inc({ source: safeMetricLabel(source.id), provider: source.provider, result: 'accepted' });
-    logGatewayEvent({ level: 'info', event: 'ingress_accepted', component: 'api-system', message: 'Webhook accepted and durable delivery rows created', eventId: event.id, sourceId: source.id, details: { provider: source.provider, eventType: verified.eventType, deliveries: deliveryIds.length, enqueued } });
-    res.status(202).json({ ok: true, duplicate: false, eventId: event.id, deliveries: deliveryIds.length, enqueued });
+    logGatewayEvent({ level: 'info', event: 'ingress_accepted', component: 'api-system', message: 'Webhook accepted and durable delivery rows created; enqueue is deferred', eventId: event.id, sourceId: source.id, details: { provider: source.provider, eventType: verified.eventType, deliveries: deliveryIds.length, enqueueMode: 'deferred' } });
+    res.status(202).json({ ok: true, duplicate: false, eventId: event.id, deliveries: deliveryIds.length, enqueueMode: 'deferred' });
   } catch (err: any) {
     try {
       const file = await writeSpoolFile({ receivedAt: new Date().toISOString(), source, headers: sanitizeObject(req.headers), body: raw.toString('utf8'), verified, cloudEvent });
