@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { Request } from 'express';
 import { decodeSecret, hmacSha256, timingSafeEqual } from '../part/crypto.js';
 import { getHeader, parseJsonSafe } from '../part/http.js';
@@ -52,6 +51,7 @@ function verifyGitHub(req: Request, raw: Buffer, source: SourceConfig, secrets: 
   const deliveryId = getHeader(req.headers, 'x-github-delivery');
   const eventType = getHeader(req.headers, 'x-github-event') ?? 'github.event';
   if (!signature || !signature.startsWith('sha256=')) return { ok: false, reason: 'Missing or invalid GitHub signature header', statusCode: 401 };
+  if (!deliveryId) return { ok: false, reason: 'Missing GitHub delivery id', statusCode: 400 };
   const receivedHex = signature.slice('sha256='.length);
   const ok = secrets.some((secretValue) => safeCompareEncoded(receivedHex, 'hex', hmacSha256(decodeSecret(secretValue), raw)));
   if (!ok) return { ok: false, reason: 'Invalid GitHub signature', statusCode: 401 };
@@ -81,7 +81,8 @@ function verifyStripe(req: Request, raw: Buffer, source: SourceConfig, secrets: 
   });
   if (!ok) return { ok: false, reason: 'Invalid Stripe signature', statusCode: 401 };
   const parsed = parseJsonSafe(raw) as any;
-  return { ok: true, providerEventId: normalizeProviderEventId(source.provider, parsed?.id), eventType: parsed?.type ?? 'stripe.event', timestamp: ts, parsedJson: parsed };
+  if (!parsed?.id) return { ok: false, reason: 'Missing Stripe event id', statusCode: 400 };
+  return { ok: true, providerEventId: normalizeProviderEventId(source.provider, parsed.id), eventType: parsed?.type ?? 'stripe.event', timestamp: ts, parsedJson: parsed };
 }
 
 function verifySlack(req: Request, raw: Buffer, source: SourceConfig, secrets: string[], toleranceSeconds: number): VerificationResult {
@@ -97,7 +98,8 @@ function verifySlack(req: Request, raw: Buffer, source: SourceConfig, secrets: s
   });
   if (!ok) return { ok: false, reason: 'Invalid Slack signature', statusCode: 401 };
   const parsed = parseJsonSafe(raw) as any;
-  return { ok: true, providerEventId: normalizeProviderEventId(source.provider, parsed?.event_id), eventType: parsed?.type ?? parsed?.event?.type ?? 'slack.event', timestamp: ts, parsedJson: parsed };
+  if (!parsed?.event_id) return { ok: false, reason: 'Missing Slack event id', statusCode: 400 };
+  return { ok: true, providerEventId: normalizeProviderEventId(source.provider, parsed.event_id), eventType: parsed?.type ?? parsed?.event?.type ?? 'slack.event', timestamp: ts, parsedJson: parsed };
 }
 
 function verifyTelegram(req: Request, raw: Buffer, source: SourceConfig, secrets: string[]): VerificationResult {
@@ -107,6 +109,7 @@ function verifyTelegram(req: Request, raw: Buffer, source: SourceConfig, secrets
   if (!ok) return { ok: false, reason: 'Invalid Telegram secret token', statusCode: 401 };
   const parsed = parseJsonSafe(raw) as any;
   const updateId = parsed?.update_id != null ? String(parsed.update_id) : undefined;
+  if (!updateId) return { ok: false, reason: 'Missing Telegram update id', statusCode: 400 };
   const eventType = Object.keys(parsed ?? {}).find((k) => k !== 'update_id') ?? 'update';
   return { ok: true, providerEventId: normalizeProviderEventId(source.provider, updateId), eventType: `telegram.${eventType}`, parsedJson: parsed };
 }
@@ -134,8 +137,10 @@ function verifyGeneric(req: Request, raw: Buffer, source: SourceConfig, secrets:
   if (!ok) return { ok: false, reason: 'Invalid generic HMAC signature', statusCode: 401 };
   const parsed = parseJsonSafe(raw) as any;
   const eventId = generic.idHeader ? getHeader(req.headers, generic.idHeader) : undefined;
+  const resolvedEventId = eventId ?? parsed?.id;
+  if (!resolvedEventId) return { ok: false, reason: 'Missing generic event id', statusCode: 400 };
   const eventType = generic.eventTypeHeader ? getHeader(req.headers, generic.eventTypeHeader) : undefined;
-  return { ok: true, providerEventId: normalizeProviderEventId(source.provider, eventId ?? parsed?.id), eventType: eventType ?? parsed?.type ?? 'generic.event', parsedJson: parsed };
+  return { ok: true, providerEventId: normalizeProviderEventId(source.provider, resolvedEventId), eventType: eventType ?? parsed?.type ?? 'generic.event', parsedJson: parsed };
 }
 
 function verifyNone(source: SourceConfig, raw: Buffer): VerificationResult {
