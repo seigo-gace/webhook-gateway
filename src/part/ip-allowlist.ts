@@ -24,7 +24,9 @@ export function isValidAllowlistRule(rule: string): boolean {
   if (!trimmed) return false;
   if (trimmed === '*') return true;
   if (normalizeIp(trimmed)) return true;
-  const [range, prefixRaw] = trimmed.split('/', 2);
+  const parts = trimmed.split('/');
+  if (parts.length !== 2) return false;
+  const [range, prefixRaw] = parts;
   if (!range || !prefixRaw) return false;
   const normalizedRange = normalizeIp(range);
   if (!normalizedRange || net.isIP(normalizedRange) !== 4) return false;
@@ -36,7 +38,9 @@ function matchesRule(ip: string, rule: string): boolean {
   if (rule === '*') return true;
   const normalizedRule = normalizeIp(rule);
   if (normalizedRule) return normalizedRule === ip;
-  const [range, prefixRaw] = rule.split('/', 2);
+  const parts = rule.split('/');
+  if (parts.length !== 2) return false;
+  const [range, prefixRaw] = parts;
   if (!range || !prefixRaw) return false;
   const normalizedRange = normalizeIp(range);
   if (!normalizedRange || net.isIP(normalizedRange) !== 4 || net.isIP(ip) !== 4) return false;
