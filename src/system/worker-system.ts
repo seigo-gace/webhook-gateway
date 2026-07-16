@@ -210,6 +210,12 @@ export async function startWorkerSystem(): Promise<void> {
   await migrate();
   tgServerLogSink.start();
   const worker = new Worker(env.QUEUE_NAME, async (job) => processDelivery(job.data.deliveryId), { connection: redisConnection as any, concurrency: env.WORKER_CONCURRENCY });
+  worker.on('error', (err) => {
+    logGatewayEvent({ level: 'error', event: 'worker_runtime_error', component: 'worker-system', message: 'BullMQ worker emitted an error', details: { error: sanitizeText(err, 300) } });
+  });
+  worker.on('failed', (job, err) => {
+    logGatewayEvent({ level: 'warn', event: 'worker_job_failed', component: 'worker-system', message: 'BullMQ worker job failed', deliveryId: String(job?.data?.deliveryId ?? ''), details: { jobId: job?.id, error: sanitizeText(err, 300) } });
+  });
   const timer = setInterval(() => void recoverySweep().catch((err) => console.error('recovery sweep failed', sanitizeText(err))), env.RECOVERY_INTERVAL_MS);
   await recoverySweep();
   logGatewayEvent({ level: 'info', event: 'worker_started', component: 'worker-system', message: 'webhook gateway worker started', details: { concurrency: env.WORKER_CONCURRENCY } });
