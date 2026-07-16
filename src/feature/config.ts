@@ -11,6 +11,10 @@ export function loadGatewayConfig(): GatewayConfig {
 }
 
 export function validateGatewayConfig(config: GatewayConfig): void {
+  if (!Array.isArray(config.sources)) throw new Error('config.sources must be an array');
+  if (!Array.isArray(config.destinations)) throw new Error('config.destinations must be an array');
+  if (!Array.isArray(config.routes)) throw new Error('config.routes must be an array');
+
   const sourceIds = new Set<string>();
   const sourceSlugs = new Set<string>();
   const destinationIds = new Set<string>();
@@ -26,6 +30,9 @@ export function validateGatewayConfig(config: GatewayConfig): void {
     if (!source.id || !source.slug || !source.provider) throw new Error(`Invalid source config: ${source.id}`);
     addUnique(sourceIds, source.id, 'source id');
     addUnique(sourceSlugs, source.slug, 'source slug');
+    if (source.allowedCidrs !== undefined && !Array.isArray(source.allowedCidrs)) {
+      throw new Error(`source ${source.id} allowedCidrs must be an array`);
+    }
     validateAllowlist(`source ${source.id} allowedCidrs`, source.allowedCidrs ?? []);
     if (source.provider === 'none' && env.NODE_ENV === 'production') {
       throw new Error('provider=none is forbidden in production');
@@ -46,7 +53,15 @@ export function validateGatewayConfig(config: GatewayConfig): void {
     if (destination.signingSecretEnv && !optionalEnv(destination.signingSecretEnv)) {
       throw new Error(`destination ${destination.id} signingSecretEnv ${destination.signingSecretEnv} is missing or empty`);
     }
-    if (destination.maxAttempts < 1) throw new Error(`destination ${destination.id} maxAttempts must be >= 1`);
+    if (!Number.isInteger(destination.maxAttempts) || destination.maxAttempts < 1) {
+      throw new Error(`destination ${destination.id} maxAttempts must be an integer >= 1`);
+    }
+    if (destination.timeoutMs !== undefined && (!Number.isInteger(destination.timeoutMs) || destination.timeoutMs < 1)) {
+      throw new Error(`destination ${destination.id} timeoutMs must be an integer >= 1`);
+    }
+    if (destination.headers !== undefined && (typeof destination.headers !== 'object' || destination.headers === null || Array.isArray(destination.headers))) {
+      throw new Error(`destination ${destination.id} headers must be an object`);
+    }
     if (destination.successMode === 'status_and_header') {
       if (!destination.acceptedHeader || !destination.acceptedHeaderValue) {
         throw new Error(`destination ${destination.id} status_and_header requires acceptedHeader and acceptedHeaderValue`);
@@ -59,6 +74,7 @@ export function validateGatewayConfig(config: GatewayConfig): void {
     addUnique(routeIds, route.id, 'route id');
     if (!sourceIds.has(route.sourceId)) throw new Error(`route ${route.id} references missing source ${route.sourceId}`);
     if (!destinationIds.has(route.destinationId)) throw new Error(`route ${route.id} references missing destination ${route.destinationId}`);
+    if (!route.eventTypePattern) throw new Error(`route ${route.id} missing eventTypePattern`);
   }
 }
 
