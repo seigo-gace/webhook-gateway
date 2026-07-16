@@ -15,9 +15,12 @@ External Provider -> /ingress/:slug -> Gateway API -> PostgreSQL -> Redis/BullMQ
 ## Guarantees
 
 - Provider-specific signature verification before payload trust.
+- Stable provider event IDs are required for duplicate suppression; signed events without a usable provider ID are rejected.
 - Raw body is preserved in memory for signature verification.
 - PostgreSQL is the source of truth; Redis/BullMQ is only the delivery transport.
 - Provider response is fast: Gateway returns `202` after verification and durable event/delivery registration, not after downstream completion.
+- If PostgreSQL is unavailable but emergency spool succeeds, Gateway returns `202` without exposing internal spool paths.
+- If both PostgreSQL and emergency spool are unavailable, Gateway returns `503` so the provider can retry.
 - Redis enqueue is best-effort with timeout; recovery rebuilds due jobs from PostgreSQL.
 - Delivery is at-least-once; downstream idempotency is mandatory.
 - Worker dispatch claims deliveries atomically so stale duplicate jobs cannot re-deliver `dead`, `skipped`, or already-claimed rows.
@@ -93,6 +96,7 @@ npm audit --audit-level=high
 - Configure Prometheus absent alerts and monitor Prometheus itself.
 - Confirm downstream idempotency using `x-gace-event-id` or CloudEvent `extensions.gatewayEventId`.
 - Confirm replay cooldowns before enabling real operators.
+- Confirm providers retry correctly when Gateway returns `503` because both DB and spool are unavailable.
 - Run failure tests: Redis down, Postgres down, Worker crash, downstream timeout, corrupted spool, spool volume unavailable.
 
 ## License
