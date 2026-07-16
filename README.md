@@ -16,16 +16,18 @@ External Provider -> /ingress/:slug -> Gateway API -> PostgreSQL -> Redis/BullMQ
 
 - Provider-specific signature verification before payload trust.
 - Raw body is preserved in memory for signature verification.
-- PostgreSQL is the source of truth; Redis is only the delivery transport.
+- PostgreSQL is the source of truth; Redis/BullMQ is only the delivery transport.
 - Provider response is fast: Gateway returns `202` after verification and durable event/delivery registration, not after downstream completion.
 - Redis enqueue is best-effort with timeout; recovery rebuilds due jobs from PostgreSQL.
 - Delivery is at-least-once; downstream idempotency is mandatory.
+- Worker dispatch claims deliveries atomically so stale duplicate jobs cannot re-deliver `dead`, `skipped`, or already-claimed rows.
 - Admin API is read-only plus replay only. No config or secret mutation API exists in v1.2.2.
+- Admin and source IP allowlists are enforced when configured.
 - Spool import classifies `success`, `duplicate`, `corrupted`, and `db_error`.
 - Replay API has cooldowns and audit logging.
 - Clock skew is reflected in `/readyz`.
 - `STORE_RAW_BODY=false` by default; replay relies on normalized payload and CloudEvent. Raw delivery can rebuild from normalized `base64` payload when available.
-
+- If raw bodies are stored, expired `body_text` is purged according to `BODY_RETENTION_DAYS` during worker recovery sweeps.
 
 ## Server Core five-stage structure
 
@@ -44,6 +46,8 @@ Containers run as `appuser` with UID/GID `10001:10001`, `no-new-privileges:true`
 ## Spool security
 
 Spool files may contain verified webhook payloads. Production must place `/spool` on an encrypted local volume. `plain_dev` is for development only and is rejected when `NODE_ENV=production`.
+
+Spool is a recovery ledger, not an operational log. Headers are sanitized before storage, but body and CloudEvent data are preserved so replay/import remains exact. Do not expose `/spool` outside the runtime host.
 
 `/spool/failed` files are purged after `SPOOL_FAILED_RETENTION_DAYS` and exposed through metrics.
 
@@ -84,10 +88,12 @@ npm audit --audit-level=high
 
 - Use encrypted volume for `/spool`.
 - Keep `/admin/*`, `/metrics`, and `/readyz` private.
+- Set `ADMIN_ALLOWED_CIDRS` when admin endpoints are reachable through a shared network path.
+- Set per-source `allowedCidrs` in `config/webhooks.json` when providers publish stable webhook source ranges.
 - Configure Prometheus absent alerts and monitor Prometheus itself.
 - Confirm downstream idempotency using `x-gace-event-id` or CloudEvent `extensions.gatewayEventId`.
 - Confirm replay cooldowns before enabling real operators.
-- Run failure tests: Redis down, Postgres down, Worker crash, downstream timeout, corrupted spool.
+- Run failure tests: Redis down, Postgres down, Worker crash, downstream timeout, corrupted spool, spool volume unavailable.
 
 ## License
 
