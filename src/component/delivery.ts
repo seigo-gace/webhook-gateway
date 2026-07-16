@@ -3,6 +3,19 @@ import type { DestinationConfig } from '../part/types.js';
 
 export type DeliveryEvaluation = 'delivered' | 'unknown' | 'failed';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function decodeBase64Payload(value: unknown): string | null {
+  if (!isRecord(value) || typeof value.base64 !== 'string') return null;
+  try {
+    return Buffer.from(value.base64, 'base64').toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
 export function evaluateDeliverySuccess(
   destination: DestinationConfig,
   response: Response
@@ -25,7 +38,10 @@ export function buildDeliveryPayload(
   cloudEvent: unknown
 ): string {
   if (destination.payloadMode === 'raw') {
-    return String(bodyText ?? JSON.stringify(normalizedPayload ?? {}));
+    if (bodyText !== null) return bodyText;
+    const decoded = decodeBase64Payload(normalizedPayload);
+    if (decoded !== null) return decoded;
+    return JSON.stringify(normalizedPayload ?? {});
   }
 
   if (destination.payloadMode === 'json') {
