@@ -48,6 +48,16 @@ describe('production recovery static guards', () => {
     expect(processDelivery).toContain('delivery_claim_skipped');
   });
 
+  it('worker purges expired raw event bodies during recovery', () => {
+    const worker = read('src/system/worker-system.ts');
+    const db = read('src/feature/db.ts');
+    const recovery = functionBody(worker, 'recoverySweep');
+    expect(worker).toContain('purgeExpiredEventBodies');
+    expect(recovery).toContain('raw_body_retention_purged');
+    expect(db).toContain('body_text=NULL');
+    expect(db).toContain('BODY_RETENTION_DAYS must be >= 0');
+  });
+
   it('worker resets stale delivering rows before selecting due deliveries inside recoverySweep', () => {
     const worker = read('src/system/worker-system.ts');
     const recovery = functionBody(worker, 'recoverySweep');
