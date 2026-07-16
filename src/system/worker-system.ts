@@ -18,6 +18,7 @@ const config = loadGatewayConfig();
 validateGatewayConfig(config);
 
 type SpoolSweepResult = SpoolImportResult | 'skipped';
+const deliverableStatuses = new Set(['queued', 'retrying', 'unknown']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -47,7 +48,11 @@ async function processDelivery(deliveryId: string): Promise<void> {
     [deliveryId]
   );
   const row = result.rows[0];
-  if (!row || row.status === 'delivered') return;
+  if (!row) return;
+  if (!deliverableStatuses.has(String(row.status))) {
+    logGatewayEvent({ level: 'info', event: 'delivery_skipped_status', component: 'worker-system', message: 'Delivery job skipped because current status is not deliverable', eventId: row.event_id, deliveryId, details: { status: row.status } });
+    return;
+  }
   const destination = config.destinations.find((item) => item.id === row.destination_id && item.enabled);
   if (!destination) throw new Error(`Destination not found: ${row.destination_id}`);
 
