@@ -11,7 +11,10 @@ function intEnv(name: string, fallback: number): number {
 function boolEnv(name: string, fallback: boolean): boolean {
   const raw = process.env[name];
   if (!raw) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
+  const normalized = raw.toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  throw new Error(`Invalid boolean env: ${name}`);
 }
 
 export const env = {
