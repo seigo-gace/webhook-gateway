@@ -4,7 +4,7 @@ function intEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const n = Number(raw);
-  if (!Number.isFinite(n)) throw new Error(`Invalid numeric env: ${name}`);
+  if (!Number.isInteger(n) || n < 0) throw new Error(`Invalid non-negative integer env: ${name}`);
   return n;
 }
 
