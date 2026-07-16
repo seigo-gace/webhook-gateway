@@ -24,7 +24,7 @@ External Provider -> /ingress/:slug -> Gateway API -> PostgreSQL -> Redis/BullMQ
 - Spool import classifies `success`, `duplicate`, `corrupted`, and `db_error`.
 - Replay API has cooldowns and audit logging.
 - Clock skew is reflected in `/readyz`.
-- `STORE_RAW_BODY=false` by default; replay relies on normalized payload and CloudEvent, not raw body text.
+- `STORE_RAW_BODY=false` by default; replay relies on normalized payload and CloudEvent. Raw delivery can rebuild from normalized `base64` payload when available.
 
 
 ## Server Core five-stage structure
@@ -74,7 +74,7 @@ curl http://127.0.0.1:7373/readyz
 CI runs:
 
 ```text
-npm ci
+npm install --no-audit --no-fund
 npm run build
 npm test
 npm audit --audit-level=high
@@ -118,4 +118,3 @@ webhook_tgserver_log_flush_failed_total
 webhook_tgserver_log_dropped_total
 webhook_tgserver_log_queue_size
 ```
-
