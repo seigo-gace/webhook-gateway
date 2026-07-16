@@ -21,6 +21,10 @@ export function validateGatewayConfig(config: GatewayConfig): void {
   const routeIds = new Set<string>();
 
   validateAllowlist('ADMIN_ALLOWED_CIDRS', splitAllowlist(env.ADMIN_ALLOWED_CIDRS));
+  validateProductionValue('ADMIN_TOKEN', env.ADMIN_TOKEN, { minLength: 32 });
+  if (env.LOG_TO_TGSERVER && env.TGSERVER_LOG_URL) {
+    validateProductionValue('TGSERVER_LOG_SECRET', env.TGSERVER_LOG_SECRET, { minLength: 16 });
+  }
 
   if (env.NODE_ENV === 'production' && env.SPOOL_STORAGE_MODE === 'plain_dev') {
     throw new Error('SPOOL_STORAGE_MODE=plain_dev is forbidden in production');
@@ -39,19 +43,27 @@ export function validateGatewayConfig(config: GatewayConfig): void {
     }
     if (source.provider !== 'none') {
       if (!source.secretEnv) throw new Error(`source ${source.id} missing secretEnv`);
-      if (!optionalEnv(source.secretEnv)) throw new Error(`source ${source.id} secretEnv ${source.secretEnv} is missing or empty`);
+      const secret = optionalEnv(source.secretEnv);
+      if (!secret) throw new Error(`source ${source.id} secretEnv ${source.secretEnv} is missing or empty`);
+      validateProductionValue(source.secretEnv, secret, { minLength: 8 });
     }
-    if (source.secondarySecretEnv && !optionalEnv(source.secondarySecretEnv)) {
-      throw new Error(`source ${source.id} secondarySecretEnv ${source.secondarySecretEnv} is missing or empty`);
+    if (source.secondarySecretEnv) {
+      const secondary = optionalEnv(source.secondarySecretEnv);
+      if (!secondary) throw new Error(`source ${source.id} secondarySecretEnv ${source.secondarySecretEnv} is missing or empty`);
+      validateProductionValue(source.secondarySecretEnv, secondary, { minLength: 8 });
     }
   }
 
   for (const destination of config.destinations) {
     if (!destination.id || !destination.urlEnv) throw new Error(`Invalid destination config: ${destination.id}`);
     addUnique(destinationIds, destination.id, 'destination id');
-    if (!optionalEnv(destination.urlEnv)) throw new Error(`destination ${destination.id} urlEnv ${destination.urlEnv} is missing or empty`);
-    if (destination.signingSecretEnv && !optionalEnv(destination.signingSecretEnv)) {
-      throw new Error(`destination ${destination.id} signingSecretEnv ${destination.signingSecretEnv} is missing or empty`);
+    const url = optionalEnv(destination.urlEnv);
+    if (!url) throw new Error(`destination ${destination.id} urlEnv ${destination.urlEnv} is missing or empty`);
+    validateProductionValue(destination.urlEnv, url, { minLength: 8 });
+    if (destination.signingSecretEnv) {
+      const signingSecret = optionalEnv(destination.signingSecretEnv);
+      if (!signingSecret) throw new Error(`destination ${destination.id} signingSecretEnv ${destination.signingSecretEnv} is missing or empty`);
+      validateProductionValue(destination.signingSecretEnv, signingSecret, { minLength: 16 });
     }
     if (!Number.isInteger(destination.maxAttempts) || destination.maxAttempts < 1) {
       throw new Error(`destination ${destination.id} maxAttempts must be an integer >= 1`);
@@ -86,5 +98,13 @@ function addUnique(seen: Set<string>, value: string, label: string): void {
 function validateAllowlist(label: string, rules: string[]): void {
   for (const rule of rules) {
     if (!isValidAllowlistRule(rule)) throw new Error(`Invalid ${label} rule: ${rule}`);
+  }
+}
+
+function validateProductionValue(label: string, value: string, options: { minLength: number }): void {
+  if (env.NODE_ENV !== 'production') return;
+  if (value.length < options.minLength) throw new Error(`${label} is too short for production`);
+  if (/replace_with|example\.com|example-app|webhook_password/i.test(value)) {
+    throw new Error(`${label} contains a placeholder value`);
   }
 }
