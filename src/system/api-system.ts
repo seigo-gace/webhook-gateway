@@ -11,6 +11,7 @@ import { writeSpoolFile, countSpoolFiles } from '../feature/spool.js';
 import { getMatchingRoutes } from '../component/routing.js';
 import { FixedWindowRateLimiter } from '../part/rateLimit.js';
 import { checkClockSkew } from '../part/clock.js';
+import { isIpAllowed, splitAllowlist } from '../part/ip-allowlist.js';
 import { sanitizeObject, safeMetricLabel } from '../part/sanitize.js';
 import { clockSkewCheckFailedCounter, clockSkewGauge, ingressCounter, rateLimitedCounter, registry, spoolFailedFileGauge, spoolFileGauge } from '../part/metrics.js';
 import { logGatewayEvent, tgServerLogSink } from '../feature/tgserver-log.js';
@@ -19,6 +20,8 @@ const config = loadGatewayConfig();
 validateGatewayConfig(config);
 
 const app = express();
+app.set('trust proxy', env.TRUST_PROXY);
+const adminAllowedCidrs = splitAllowlist(env.ADMIN_ALLOWED_CIDRS);
 const ingressLimiter = new FixedWindowRateLimiter(env.INGRESS_RATE_LIMIT_PER_MINUTE, 60_000);
 const adminLimiter = new FixedWindowRateLimiter(env.ADMIN_RATE_LIMIT_PER_MINUTE, 60_000);
 const replayLimiter = new FixedWindowRateLimiter(env.REPLAY_RATE_LIMIT_PER_MINUTE, 60_000);
@@ -50,7 +53,18 @@ app.get('/metrics', async (_req, res) => {
   res.end(await registry.metrics());
 });
 
+function requestIp(req: express.Request): string | undefined {
+  return req.ip || req.socket.remoteAddress || undefined;
+}
+
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  const ip = requestIp(req);
+  if (!isIpAllowed(ip, adminAllowedCidrs)) {
+    logGatewayEvent({ level: 'warn', event: 'admin_ip_denied', component: 'api-system', message: 'Admin request denied by IP allowlist', details: { ip } });
+    res.status(403).json({ error: 'admin ip denied' });
+    return;
+  }
+
   const key = `admin:${req.header('x-admin-token') ? 'token' : 'missing'}`;
   const limited = adminLimiter.check(key);
   if (!limited.allowed) {
@@ -115,6 +129,12 @@ app.post('/ingress/:slug', express.raw({ type: '*/*', limit: env.MAX_BODY_BYTES 
     logGatewayEvent({ level: 'warn', event: 'ingress_unknown_source', component: 'api-system', message: 'Ingress rejected because source slug is unknown', details: { slug: req.params.slug } });
     return res.status(404).json({ error: 'unknown source' });
   }
+  const ip = requestIp(req);
+  if (!isIpAllowed(ip, source.allowedCidrs)) {
+    ingressCounter.inc({ source: safeMetricLabel(source.id), provider: source.provider, result: 'ip_denied' });
+    logGatewayEvent({ level: 'warn', event: 'ingress_ip_denied', component: 'api-system', message: 'Ingress request denied by source IP allowlist', sourceId: source.id, details: { provider: source.provider, ip } });
+    return res.status(403).json({ error: 'source ip denied' });
+  }
   const limit = ingressLimiter.check(`ingress:${source.provider}:${source.slug}`);
   if (!limit.allowed) {
     rateLimitedCounter.inc({ scope: 'ingress', source: safeMetricLabel(source.slug) });
@@ -133,7 +153,7 @@ app.post('/ingress/:slug', express.raw({ type: '*/*', limit: env.MAX_BODY_BYTES 
   const normalizedPayload = verified.parsedJson ?? { base64: raw.toString('base64') };
   const cloudEvent = { specversion: '1.0', id: verified.providerEventId, source: `${source.provider}:${source.id}`, type: verified.eventType, time: new Date().toISOString(), datacontenttype: verified.parsedJson ? 'application/json' : 'application/octet-stream', data: normalizedPayload, extensions: { gatewayEventId: crypto.randomUUID(), sourceId: source.id, provider: source.provider, bodySha256, dataMode: verified.parsedJson ? 'json_object' : 'base64_raw' } };
   try {
-    const event = await insertEvent({ sourceId: source.id, provider: source.provider, providerEventId: verified.providerEventId, eventType: verified.eventType, bodySha256, bodyText: env.STORE_RAW_BODY ? raw.toString('utf8') : null, parsedJson: verified.parsedJson, normalizedPayload, cloudEvent, receivedIp: req.ip });
+    const event = await insertEvent({ sourceId: source.id, provider: source.provider, providerEventId: verified.providerEventId, eventType: verified.eventType, bodySha256, bodyText: env.STORE_RAW_BODY ? raw.toString('utf8') : null, parsedJson: verified.parsedJson, normalizedPayload, cloudEvent, receivedIp: ip });
     if (event.duplicate) {
       ingressCounter.inc({ source: safeMetricLabel(source.id), provider: source.provider, result: 'duplicate' });
       logGatewayEvent({ level: 'info', event: 'ingress_duplicate', component: 'api-system', message: 'Duplicate webhook accepted without new delivery', eventId: event.id, sourceId: source.id, details: { provider: source.provider, eventType: verified.eventType } });
