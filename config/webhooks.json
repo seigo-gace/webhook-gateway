@@ -83,6 +83,11 @@
       "timeoutMs": 30000,
       "maxAttempts": 8,
       "unknownPolicy": "retry_then_dead",
+      "allowPrivateNetwork": true,
+      "circuitBreaker": {
+        "failureThreshold": 5,
+        "openSeconds": 300
+      },
       "enabled": true,
       "headers": {
         "x-gace-destination": "app-receiver"
@@ -101,6 +106,11 @@
       "timeoutMs": 30000,
       "maxAttempts": 8,
       "unknownPolicy": "retry_then_dead",
+      "allowPrivateNetwork": true,
+      "circuitBreaker": {
+        "failureThreshold": 5,
+        "openSeconds": 300
+      },
       "enabled": true,
       "headers": {
         "x-gace-destination": "tgserver-receiver"
