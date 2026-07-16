@@ -17,8 +17,8 @@ describe('config validation static guards', () => {
 
   it('validates cross references and duplicate IDs at startup', () => {
     const config = read('src/feature/config.ts');
-    expect(config).toContain('Duplicate source id');
-    expect(config).toContain('Duplicate destination id');
+    expect(config).toContain("addUnique(sourceIds, source.id, 'source id')");
+    expect(config).toContain("addUnique(destinationIds, destination.id, 'destination id')");
     expect(config).toContain('references missing source');
     expect(config).toContain('references missing destination');
   });
