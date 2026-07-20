@@ -96,7 +96,7 @@ function isSecurityConfigurationError(error: unknown): boolean {
   return /DESTINATION_DNS_PRIVATE_ADDRESS|DESTINATION_DNS_NO_ALLOWED_ADDRESS|destination URL/i.test(message);
 }
 
-async function processDelivery(deliveryId: string): Promise<void> {
+export async function processDelivery(deliveryId: string): Promise<void> {
   const result = await pool.query(
     `SELECT d.*, e.cloud_event, e.normalized_payload, e.body_text, e.provider, e.source_id
      FROM deliveries d JOIN events e ON e.id=d.event_id
@@ -385,7 +385,7 @@ async function markUnknownOrDead(input: {
   });
 }
 
-async function publishOutboxBatch(): Promise<number> {
+export async function publishOutboxBatch(): Promise<number> {
   const items = await claimOutboxBatch(env.OUTBOX_BATCH_SIZE, env.OUTBOX_LEASE_SECONDS);
   if (items.length === 0) return 0;
   await Promise.all(items.map(async (item) => {
