@@ -215,15 +215,17 @@ describe('Webhook Gateway real end-to-end flow', () => {
     expect(row.rows[0]).toMatchObject({ status: 'skipped', next_attempt_at: null, last_status_code: 410 });
   });
 
-  it('bounds oversized downstream response bodies and schedules a safe retry', async () => {
+  it('truncates oversized successful response bodies without scheduling a duplicate retry', async () => {
     receiverMode = 'large';
     await postGitHubWebhook(crypto.randomUUID());
     const deliveryId = String((await pool.query('SELECT id FROM deliveries LIMIT 1')).rows[0].id);
 
     await processDelivery(deliveryId);
 
-    const row = await pool.query('SELECT status, last_error FROM deliveries WHERE id=$1', [deliveryId]);
-    expect(row.rows[0].status).toBe('retrying');
-    expect(row.rows[0].last_error).toContain('DELIVERY_RESPONSE_BODY_TOO_LARGE');
+    const row = await pool.query('SELECT status, last_error, delivered_at FROM deliveries WHERE id=$1', [deliveryId]);
+    expect(receiverCount).toBe(1);
+    expect(row.rows[0].status).toBe('delivered');
+    expect(row.rows[0].last_error).toBeNull();
+    expect(row.rows[0].delivered_at).not.toBeNull();
   });
 });
