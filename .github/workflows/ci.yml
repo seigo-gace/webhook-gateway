@@ -49,6 +49,13 @@ jobs:
           cache-dependency-path: package.json
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Upload resolved dependency lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Typecheck
         id: typecheck
         continue-on-error: true
@@ -68,7 +75,23 @@ jobs:
         if: steps.typecheck.outcome == 'failure'
         run: exit 1
       - name: Unit, integration, concurrency, and E2E tests
-        run: npm run test:ci
+        id: tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:ci 2>&1 | tee test.log
+      - name: Upload test diagnostics
+        if: always() && steps.tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-diagnostics
+          path: test.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Enforce test result
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
       - name: Build production JavaScript
         run: npm run build
       - name: Validate production container build
