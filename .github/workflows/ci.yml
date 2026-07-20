@@ -1,19 +1,97 @@
 name: CI
+
 on:
   push:
-    branches: [ main ]
+    branches: [main, agent/**]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
-  test:
+  validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: webhook_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d webhook_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://test:test@127.0.0.1:5432/webhook_test
+      REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
-      - run: npm run build
-      - run: npm test
-      - run: npm audit --audit-level=high
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        id: typecheck
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck.log
+      - name: Upload typecheck diagnostics
+        if: always() && steps.typecheck.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-diagnostics
+          path: typecheck.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Enforce typecheck result
+        if: steps.typecheck.outcome == 'failure'
+        run: exit 1
+      - name: Unit, integration, concurrency, and E2E tests
+        id: tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:ci 2>&1 | tee test.log
+      - name: Upload test diagnostics
+        if: always() && steps.tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-diagnostics
+          path: test.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Enforce test result
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
+      - name: Build production JavaScript
+        run: npm run build
+      - name: Validate production container build
+        run: docker build --target runtime -t webhook-gateway:ci .
+      - name: Validate Compose model
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+      - name: Dependency vulnerability gate
+        run: npm audit --audit-level=high

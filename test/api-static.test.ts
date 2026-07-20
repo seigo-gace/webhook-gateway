@@ -14,18 +14,26 @@ describe('API production static guards', () => {
     expect(api).toContain('ingress_ip_denied');
   });
 
-  it('keeps provider ACK fast by deferring Redis enqueue after durable rows exist', () => {
+  it('acks only after atomic event, delivery, and outbox persistence', () => {
     const api = read('src/system/api-system.ts');
-    expect(api).toContain('enqueueDeliveryDeferred');
-    expect(api).toContain("enqueueMode: 'deferred'");
-    expect(api).not.toContain('const enqueueResults = await Promise.allSettled(deliveryIds.map((id) => enqueueDeliveryBestEffort(id)))');
+    expect(api).toContain('persistIngressWithDeliveries');
+    expect(api).toContain("enqueueMode: 'deferred+outbox'");
+    expect(api).toContain('event.deliveryIds.forEach((id) => enqueueDeliveryDeferred(id))');
+    expect(api).not.toContain('dummy-secret');
   });
 
-  it('handles emergency spool failure explicitly and does not expose the spool path to providers', () => {
+  it('handles emergency spool failure explicitly and never exposes its path', () => {
     const api = read('src/system/api-system.ts');
     expect(api).toContain('ingress_spool_failed');
     expect(api).toContain("res.status(503).json({ ok: false, error: 'durable storage unavailable' })");
-    expect(api).toContain('res.status(202).json({ ok: true, spooled: true })');
-    expect(api).not.toContain('res.status(202).json({ ok: true, spooled: true, file })');
+    expect(api).toContain("res.status(202).json({ ok: true, spooled: true })");
+    expect(api).not.toContain('spooled: true, file');
+  });
+
+  it('uses the Redis-backed composite limiter with a memory fallback', () => {
+    const api = read('src/system/api-system.ts');
+    expect(api).toContain('CompositeRateLimiter');
+    expect(api).toContain('REDIS_OPERATION_TIMEOUT_MS');
+    expect(api).toContain('backend: limit.backend');
   });
 });

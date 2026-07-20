@@ -6,18 +6,32 @@ function read(path: string): string {
 }
 
 describe('environment validation static guards', () => {
-  it('rejects malformed integer and boolean env values', () => {
-    const env = read('src/part/env.ts');
-    expect(env).toContain('Invalid non-negative integer env');
-    expect(env).toContain('Number.isInteger(n)');
-    expect(env).toContain('Invalid boolean env');
-    expect(env).toContain("['0', 'false', 'no', 'off']");
+  it('uses one schema to reject malformed integer and boolean values', () => {
+    const source = read('src/part/env.ts');
+    expect(source).toContain("import { z } from 'zod'");
+    expect(source).toContain('environmentSchema.safeParse');
+    expect(source).toContain('Invalid environment configuration');
+    expect(source).toContain("['0', 'false', 'no', 'off']");
+    expect(source).toContain('z.number().int().nonnegative()');
   });
 
-  it('does not evaluate legacy recovery interval when RECOVERY_INTERVAL_MS is present', () => {
-    const env = read('src/part/env.ts');
-    expect(env).toContain('function legacyRecoveryIntervalMs()');
-    expect(env).toContain('process.env.RECOVERY_INTERVAL_MS');
-    expect(env).toContain("RECOVERY_INTERVAL_MS: legacyRecoveryIntervalMs()");
+  it('preserves the legacy recovery interval alias without eagerly parsing both values', () => {
+    const source = read('src/part/env.ts');
+    expect(source).toContain('process.env.RECOVERY_INTERVAL_MS ?? process.env.RECOVERY_SWEEP_INTERVAL_MS');
+    expect(source).toContain('RECOVERY_INTERVAL_MS: positiveInt(30_000)');
+  });
+
+  it('validates delivery leases, outbox publishing, and encrypted spool settings', () => {
+    const source = read('src/part/env.ts');
+    for (const name of [
+      'DELIVERY_LEASE_SECONDS',
+      'OUTBOX_PUBLISH_INTERVAL_MS',
+      'OUTBOX_BATCH_SIZE',
+      'OUTBOX_LEASE_SECONDS',
+      'SPOOL_ENCRYPTION_KEY',
+      'SPOOL_HMAC_KEY'
+    ]) {
+      expect(source).toContain(name);
+    }
   });
 });

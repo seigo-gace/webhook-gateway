@@ -3,19 +3,45 @@ import { Redis } from 'ioredis';
 import { env } from '../part/env.js';
 import { sanitizeText } from '../part/sanitize.js';
 
-export const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null, enableOfflineQueue: false });
-export const deliveryQueue = new Queue(env.QUEUE_NAME, { connection: redisConnection as any });
+export const redisConnection = new Redis(env.REDIS_URL, {
+  maxRetriesPerRequest: null,
+  enableOfflineQueue: false
+});
+export const deliveryQueue = new Queue(env.QUEUE_NAME, { connection: redisConnection as never });
 
-redisConnection.on('error', (err) => {
-  console.warn(JSON.stringify({ level: 'warn', event: 'redis_connection_error', component: 'queue', message: 'Redis connection error; durable recovery remains PostgreSQL-backed', details: { error: sanitizeText(err, 300) } }));
+redisConnection.on('error', (error) => {
+  console.warn(JSON.stringify({
+    level: 'warn',
+    event: 'redis_connection_error',
+    component: 'queue',
+    message: 'Redis connection error; durable recovery remains PostgreSQL-backed',
+    details: { error: sanitizeText(error, 300) }
+  }));
 });
 
-deliveryQueue.on('error', (err) => {
-  console.warn(JSON.stringify({ level: 'warn', event: 'bullmq_queue_error', component: 'queue', message: 'BullMQ queue error; enqueue remains best-effort', details: { error: sanitizeText(err, 300) } }));
+deliveryQueue.on('error', (error) => {
+  console.warn(JSON.stringify({
+    level: 'warn',
+    event: 'bullmq_queue_error',
+    component: 'queue',
+    message: 'BullMQ queue error; enqueue remains best effort',
+    details: { error: sanitizeText(error, 300) }
+  }));
 });
 
 export async function enqueueDelivery(deliveryId: string): Promise<void> {
-  await deliveryQueue.add('deliver', { deliveryId }, { jobId: deliveryId, removeOnComplete: 1000, removeOnFail: 5000 });
+  // PostgreSQL is the delivery history. Queue records are transport-only and
+  // must disappear after either outcome so recovery/Admin replay can reuse the
+  // stable deliveryId without being suppressed by a completed/failed tombstone.
+  await deliveryQueue.add(
+    'deliver',
+    { deliveryId },
+    {
+      jobId: deliveryId,
+      removeOnComplete: true,
+      removeOnFail: true
+    }
+  );
 }
 
 export async function enqueueDeliveryBestEffort(deliveryId: string): Promise<boolean> {
