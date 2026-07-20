@@ -1,57 +1,106 @@
-G-ACE Universal Webhook Gateway v1.2.2 Server Core five-stage + TGServer log validation result
+G-ACE Universal Webhook Gateway v2.0.1 P0 integration validation result
 
-Local validation completed in /mnt/data/webhook-gateway-v123-5stage after rebuilding the source layout into the Server Core five-stage architecture and adding TGServer log aggregation.
+Validated repository:
+- seigo-gace/webhook-gateway
+- branch: agent/webhook-gateway-v2-complete
+- validated commit: dd5f23d1967371b5b2c9fb33199a4d2753917a8f
+- GitHub Actions run: 29780740299 (CI run 215)
+- runner: Ubuntu 24.04 / Node.js 22 / PostgreSQL 17 / Redis 7
+- result: SUCCESS
 
 Architecture target:
 - Part -> Feature -> Component -> System -> Application
+- Existing v1.2.2 P0 runtime retained as the executable base.
+- Incomplete v2 interface-only boundaries were not treated as completed implementation.
 
-Commands executed after the rebuild:
+Validation gates executed successfully:
 1. npm ci --no-audit --no-fund
-   - success in local ZIP workspace with package-lock.json
-2. npm run build
-   - success
-3. npm test
-   - success, 13 tests passed
-4. npm audit --audit-level=high
-   - success, found 0 vulnerabilities
+   - package-lock.json present and used.
+2. npm run typecheck
+   - TypeScript strict typecheck succeeded.
+3. npm run test:ci
+   - unit, static architecture/security, PostgreSQL integration, Redis/BullMQ integration,
+     concurrency, recovery, fault-injection, and real HTTP E2E suites succeeded.
+4. npm run build
+   - production JavaScript build succeeded.
+5. docker build --target runtime -t webhook-gateway:ci .
+   - production-only dependency image build succeeded.
+6. docker compose config --quiet
+   - production Compose model validation succeeded.
+7. npm audit --audit-level=high
+   - high-severity dependency gate succeeded.
 
-Repository connector note:
-- GitHub connector tree update does not include package-lock.json in this commit due payload size limits.
-- CI uses npm install --no-audit --no-fund in this commit.
-- The validated ZIP artifact retains package-lock.json; add it from a server/PC clone pass when deterministic npm ci is required on main.
+P0 durability and acknowledgement validation:
+- Invalid provider signatures are rejected before durable persistence.
+- Event, Delivery, and Delivery Outbox commit atomically before normal-path 202.
+- Duplicate provider events create one Event, one Delivery, and one Outbox row.
+- Twenty concurrent retries of the same provider event are deduplicated.
+- Transaction failure rolls back the Event rather than leaving partial normal-path state.
+- PostgreSQL failure falls back to authenticated encrypted spool and returns 202 only after commit.
+- PostgreSQL plus spool failure returns 503.
+- Existing Event plus missing Delivery/Outbox is reconciled during spool recovery.
+- Redis is not required for provider acknowledgement or API readiness; degradation is reported.
 
-Structure verification:
-- src/part exists and contains single-responsibility primitives.
-- src/feature exists and contains config, verifier, DB ledger, queue, spool, and TGServer log features.
-- src/component exists and contains routing and delivery composition logic.
-- src/system exists and contains API and Worker runtime systems.
-- src/application exists and contains application launch modules.
-- src/server.ts and src/worker.ts are thin launchers only.
+Concurrency and recovery validation:
+- Delivery leases allow one concurrent owner for duplicate jobs.
+- Delivery completion/failure requires the matching lease token.
+- Transactional Outbox claims use FOR UPDATE SKIP LOCKED without duplicate ownership.
+- Outbox publish failure remains retryable.
+- Replay cooldown acquisition is atomic under concurrent requests.
+- Startup migrations are serialized with a PostgreSQL advisory lock.
+- Concurrent empty-schema migration attempts construct the complete schema successfully.
+- Expired delivery leases return to retry state.
+- Completed and unexpectedly failed BullMQ jobs are removed so the same Delivery ID can be replayed.
 
-Docker validation:
-- docker is not installed in this execution environment, so docker compose config / docker compose E2E could not be executed here.
-- Docker Compose E2E remains mandatory on the target server after GitHub push.
+Delivery and network security validation:
+- DNS answers are validated before dispatch and the selected IP is pinned to the connection.
+- Private, local, reserved, documentation, multicast, and non-routable answers are blocked unless explicitly allowed.
+- IPv4-mapped IPv6 private targets are blocked.
+- Redirect following is disabled.
+- Destination response bodies are bounded and truncated without converting successful 2xx into a retry.
+- 503 is classified for retry.
+- 410 is classified as skipped/terminal configuration action.
+- Unknown/timeout outcomes remain explicit.
+- Redis circuit breaker includes a single half-open probe and degrades safely if Redis fails.
+- Custom destination headers cannot override gateway integrity, signature, Host, content-length, or hop-by-hop headers.
+- Header CR/LF injection, invalid names, and non-string JSON values are rejected at startup.
 
-Preserved v1.2.2 P0 coverage:
-- Downstream successMode status_only/status_and_header
-- unknown delivery status with maxAttempts -> dead
-- DELIVERY_TIMEOUT_MS and per-destination timeout
-- replay cooldown and replay audit
-- ingress/admin/replay rate limit
-- webhook_rate_limited_total metric
-- Clock skew readiness check with cache
-- webhook_clock_skew_seconds metric
-- Standard/Stripe multi-signature support
-- Generic HMAC multi-candidate support
-- provider_event_id normalization
-- STORE_RAW_BODY=false default
-- replay from normalized_payload/cloud_event, not body_text
-- sanitization for audit/errors/metrics-facing values
-- config validation at startup
+Spool security validation:
+- encrypted_file mode uses AES-256-GCM and HMAC-SHA256.
+- Sensitive payload text is absent from the stored encrypted envelope.
+- Modified ciphertext fails HMAC validation before decryption.
+- Writes use temporary files and atomic rename.
+- Corrupted records move to the failed area.
+- Recovery-critical body, verification metadata, and CloudEvent data remain exact.
 
-TGServer log aggregation:
-- src/part/logging-types.ts
-- src/feature/tgserver-log.ts
-- API and Worker systems emit sanitized operational logs
-- Sink is non-blocking, batched, bounded, and metric-instrumented
-- Provider 202 path is not blocked by TGServer availability
+API and operator validation:
+- Admin routes use token and optional IP allowlist controls.
+- Admin UUID parameters are rejected as 400 before PostgreSQL.
+- Async route failures pass through a sanitized Express error boundary.
+- Injected Admin DB failure returns sanitized 500 and the process remains alive.
+- Replay state reset clears stale lease fields and writes audit records.
+- Admin API remains read-only plus replay; no runtime config/secret mutation endpoint exists.
+
+Deployment validation:
+- Node.js 22 runtime.
+- Locked npm dependencies and npm ci in CI/Docker.
+- Final Docker stage contains production dependencies only.
+- API and Worker run as UID/GID 10001 with read-only root filesystem, no-new-privileges, and dropped capabilities.
+- API startup depends on PostgreSQL but not Redis.
+- Worker startup depends on PostgreSQL and Redis.
+- PostgreSQL/Redis are not published by the production Compose model.
+
+Documentation synchronized:
+- README.md
+- docs/ARCHITECTURE.md
+- docs/OPERATIONS.md
+- docs/SECURITY.md
+- docs/SERVER_CORE_ALIGNMENT.md
+
+Not claimed:
+- No throughput, latency, memory, or GC performance number is claimed because a repeatable benchmark on the target deployment server has not yet been executed.
+- At-least-once delivery remains intentional; downstream destinations must enforce idempotency for ambiguous remote outcomes.
+
+Final release condition:
+- This result records the successful pre-merge implementation validation.
+- A final CI run must also succeed after this validation document update and again on main after merge.
