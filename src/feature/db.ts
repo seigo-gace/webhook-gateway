@@ -30,7 +30,10 @@ export interface ClaimedOutbox {
 }
 
 export async function migrate(): Promise<void> {
-  await pool.query(`
+  const client = await pool.connect();
+  try {
+    await client.query("SELECT pg_advisory_lock(hashtext('gace_webhook_gateway_v2_migrate'))");
+    await client.query(`
     CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
     CREATE TABLE IF NOT EXISTS events (
@@ -111,7 +114,11 @@ export async function migrate(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_deliveries_lock_expiry ON deliveries(status, lock_expires_at);
     CREATE INDEX IF NOT EXISTS idx_deliveries_event_id ON deliveries(event_id);
     CREATE INDEX IF NOT EXISTS idx_delivery_outbox_due ON delivery_outbox(status, next_attempt_at, lock_expires_at);
-  `);
+    `);
+  } finally {
+    await client.query("SELECT pg_advisory_unlock(hashtext('gace_webhook_gateway_v2_migrate'))").catch(() => undefined);
+    client.release();
+  }
 }
 
 export async function persistIngressWithDeliveries(
