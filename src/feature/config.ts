@@ -196,8 +196,11 @@ function validateHeaderName(label: string, value: string): void {
 }
 
 function validateHeaderValue(label: string, value: string): void {
-  if (/[
-]/.test(value)) throw new Error(`${label} must not contain CR or LF`);
+  const containsCarriageReturn = value.includes(String.fromCharCode(13));
+  const containsLineFeed = value.includes(String.fromCharCode(10));
+  if (containsCarriageReturn || containsLineFeed) {
+    throw new Error(`${label} must not contain CR or LF`);
+  }
 }
 
 function validateProductionValue(label: string, value: string, options: { minLength: number }): void {
