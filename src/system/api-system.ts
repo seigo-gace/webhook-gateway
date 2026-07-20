@@ -5,7 +5,7 @@ import { env } from '../part/env.js';
 import { loadGatewayConfig, validateGatewayConfig } from '../feature/config.js';
 import { verifyInbound } from '../feature/verifiers.js';
 import { sha256Hex } from '../part/crypto.js';
-import { asyncHandler } from '../part/http.js';
+import { asyncHandler, requireUuidParam } from '../part/http.js';
 import { migrate, persistIngressWithDeliveries, audit, closeDb, pool, checkReplayCooldown } from '../feature/db.js';
 import { enqueueDeliveryBestEffort, enqueueDeliveryDeferred, closeQueue, redisConnection } from '../feature/queue.js';
 import { writeSpoolFile, countSpoolFiles } from '../feature/spool.js';
@@ -131,7 +131,7 @@ apiApp.get('/admin/events', requireAdmin, asyncHandler(async (req, res) => {
   res.json({ events: rows.rows });
 }));
 
-apiApp.get('/admin/events/:id', requireAdmin, asyncHandler(async (req, res) => {
+apiApp.get('/admin/events/:id', requireAdmin, requireUuidParam('id'), asyncHandler(async (req, res) => {
   const event = await pool.query('SELECT * FROM events WHERE id=$1', [req.params.id]);
   if (!event.rows[0]) return res.status(404).json({ error: 'event not found' });
   const deliveries = await pool.query(
@@ -141,7 +141,7 @@ apiApp.get('/admin/events/:id', requireAdmin, asyncHandler(async (req, res) => {
   res.json({ event: event.rows[0], deliveries: deliveries.rows });
 }));
 
-apiApp.post('/admin/events/:id/replay', requireAdmin, asyncHandler(async (req, res) => {
+apiApp.post('/admin/events/:id/replay', requireAdmin, requireUuidParam('id'), asyncHandler(async (req, res) => {
   const rate = replayLimiter.check(`event:${req.params.id}`);
   if (!rate.allowed) {
     return replayDenied(req, res, 'event', req.params.id, rate.retryAfterSeconds ?? env.REPLAY_EVENT_COOLDOWN_SECONDS);
@@ -182,7 +182,7 @@ apiApp.post('/admin/events/:id/replay', requireAdmin, asyncHandler(async (req, r
   res.json({ ok: true, requeued: deliveries.rows.length });
 }));
 
-apiApp.post('/admin/deliveries/:id/replay', requireAdmin, asyncHandler(async (req, res) => {
+apiApp.post('/admin/deliveries/:id/replay', requireAdmin, requireUuidParam('id'), asyncHandler(async (req, res) => {
   const rate = replayLimiter.check(`delivery:${req.params.id}`);
   if (!rate.allowed) {
     return replayDenied(req, res, 'delivery', req.params.id, rate.retryAfterSeconds ?? env.REPLAY_DELIVERY_COOLDOWN_SECONDS);
