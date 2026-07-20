@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { env, optionalEnv } from '../part/env.js';
+import { decodeSecret } from '../part/crypto.js';
 import { isValidAllowlistRule, splitAllowlist } from '../part/ip-allowlist.js';
 import { validateDestinationUrl } from '../part/url-security.js';
 import type { GatewayConfig } from '../part/types.js';
@@ -29,6 +30,16 @@ export function validateGatewayConfig(config: GatewayConfig): void {
 
   if (env.NODE_ENV === 'production' && env.SPOOL_STORAGE_MODE === 'plain_dev') {
     throw new Error('SPOOL_STORAGE_MODE=plain_dev is forbidden in production');
+  }
+  if (env.SPOOL_STORAGE_MODE === 'encrypted_file') {
+    validateProductionValue('SPOOL_ENCRYPTION_KEY', env.SPOOL_ENCRYPTION_KEY, { minLength: 32 });
+    validateProductionValue('SPOOL_HMAC_KEY', env.SPOOL_HMAC_KEY, { minLength: 32 });
+    if (decodeSecret(env.SPOOL_ENCRYPTION_KEY).length !== 32) {
+      throw new Error('SPOOL_ENCRYPTION_KEY must decode to exactly 32 bytes');
+    }
+    if (decodeSecret(env.SPOOL_HMAC_KEY).length < 32) {
+      throw new Error('SPOOL_HMAC_KEY must decode to at least 32 bytes');
+    }
   }
 
   for (const source of config.sources) {
@@ -76,16 +87,18 @@ export function validateGatewayConfig(config: GatewayConfig): void {
     if (destination.circuitBreaker !== undefined) {
       const threshold = destination.circuitBreaker.failureThreshold;
       const openSeconds = destination.circuitBreaker.openSeconds;
-      if (threshold !== undefined && (!Number.isInteger(threshold) || threshold < 1)) throw new Error(`destination ${destination.id} circuitBreaker.failureThreshold must be an integer >= 1`);
-      if (openSeconds !== undefined && (!Number.isInteger(openSeconds) || openSeconds < 1)) throw new Error(`destination ${destination.id} circuitBreaker.openSeconds must be an integer >= 1`);
+      if (threshold !== undefined && (!Number.isInteger(threshold) || threshold < 1)) {
+        throw new Error(`destination ${destination.id} circuitBreaker.failureThreshold must be an integer >= 1`);
+      }
+      if (openSeconds !== undefined && (!Number.isInteger(openSeconds) || openSeconds < 1)) {
+        throw new Error(`destination ${destination.id} circuitBreaker.openSeconds must be an integer >= 1`);
+      }
     }
     if (destination.headers !== undefined && (typeof destination.headers !== 'object' || destination.headers === null || Array.isArray(destination.headers))) {
       throw new Error(`destination ${destination.id} headers must be an object`);
     }
-    if (destination.successMode === 'status_and_header') {
-      if (!destination.acceptedHeader || !destination.acceptedHeaderValue) {
-        throw new Error(`destination ${destination.id} status_and_header requires acceptedHeader and acceptedHeaderValue`);
-      }
+    if (destination.successMode === 'status_and_header' && (!destination.acceptedHeader || !destination.acceptedHeaderValue)) {
+      throw new Error(`destination ${destination.id} status_and_header requires acceptedHeader and acceptedHeaderValue`);
     }
   }
 
