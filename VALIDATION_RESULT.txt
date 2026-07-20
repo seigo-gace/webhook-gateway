@@ -6,8 +6,12 @@ Validated repository:
 - validated pre-merge commit: d7f110de2b1149a29a397d39b298fc40741ea797
 - successful pre-merge GitHub Actions run: 29780907111 (CI run 218)
 - merged main integration commit: 5cb7a78cf7e0ce333b62f3db31ae3d84ff3b8863
+- post-merge validation base main commit: 5670a9d6840054dae18dd84f1921c77224e895a3
+- successful post-merge validation PR: #2
+- successful post-merge GitHub Actions run: 29781233132 (CI run 223)
+- post-merge validation documentation commit: 7391a4e663472d9b25557c470246374177b58f6a
 - runner: Ubuntu 24.04 / Node.js 22 / PostgreSQL 17 / Redis 7
-- pre-merge result: SUCCESS
+- final validation result: SUCCESS
 
 Architecture target:
 - Part -> Feature -> Component -> System -> Application
@@ -97,11 +101,13 @@ Documentation synchronized:
 - docs/OPERATIONS.md
 - docs/SECURITY.md
 - docs/SERVER_CORE_ALIGNMENT.md
+- docs/POST_MERGE_VALIDATION.md
 
 Not claimed:
 - No throughput, latency, memory, or GC performance number is claimed because a repeatable benchmark on the target deployment server has not yet been executed.
 - At-least-once delivery remains intentional; downstream destinations must enforce idempotency for ambiguous remote outcomes.
 
-Main verification trigger:
-- This main-branch documentation commit intentionally triggers the same complete CI gate against the merged v2.0.1 implementation.
-- Release completion requires that main-branch CI run to succeed.
+Final release status:
+- The complete implementation passed pre-merge CI run 218.
+- The integrated main tree passed post-merge validation CI run 223.
+- Webhook Gateway v2.0.1 P0 integration is complete in main.
