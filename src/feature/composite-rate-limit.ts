@@ -33,8 +33,13 @@ export class CompositeRateLimiter {
     private readonly ipLimit: number,
     private readonly windowSeconds = 60,
     private readonly operationTimeoutMs = 500,
-    private readonly prefix = 'webhook:rate'
-  ) {}
+    private readonly prefix = 'webhook:rate',
+    private readonly maxMemoryEntries = 10_000
+  ) {
+    if (!Number.isInteger(maxMemoryEntries) || maxMemoryEntries < 2) {
+      throw new Error('maxMemoryEntries must be an integer >= 2');
+    }
+  }
 
   async check(provider: string, ip: string): Promise<RateLimitDecision> {
     const providerKey = `${this.prefix}:provider:${stableKey(provider)}`;
@@ -81,20 +86,28 @@ export class CompositeRateLimiter {
 
   private incrementMemory(key: string, now: number): MemoryWindow {
     const existing = this.memory.get(key);
-    if (!existing || existing.expiresAt <= now) {
-      const fresh = { count: 1, expiresAt: now + this.windowSeconds * 1000 };
-      this.memory.set(key, fresh);
-      this.pruneMemory(now);
-      return fresh;
+    if (existing && existing.expiresAt > now) {
+      existing.count += 1;
+      // Refresh insertion order so active keys are evicted after colder keys.
+      this.memory.delete(key);
+      this.memory.set(key, existing);
+      return existing;
     }
-    existing.count += 1;
-    return existing;
+
+    this.ensureMemoryCapacity(now);
+    const fresh = { count: 1, expiresAt: now + this.windowSeconds * 1000 };
+    this.memory.set(key, fresh);
+    return fresh;
   }
 
-  private pruneMemory(now: number): void {
-    if (this.memory.size < 10_000) return;
+  private ensureMemoryCapacity(now: number): void {
     for (const [key, window] of this.memory) {
       if (window.expiresAt <= now) this.memory.delete(key);
+    }
+    while (this.memory.size >= this.maxMemoryEntries) {
+      const oldest = this.memory.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.memory.delete(oldest);
     }
   }
 }
