@@ -28,4 +28,28 @@ describe('CompositeRateLimiter', () => {
     expect(blocked.backend).toBe('memory');
     expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
   });
+
+  it('evicts cold keys instead of growing without bound during a Redis outage', async () => {
+    const limiter = new CompositeRateLimiter(
+      failingRedis(),
+      100,
+      100,
+      60,
+      10,
+      'test-rate',
+      4
+    );
+
+    for (let index = 0; index < 20; index += 1) {
+      await limiter.check(`provider-${index}`, `198.51.100.${index}`);
+    }
+
+    const memory = (limiter as unknown as { memory: Map<string, unknown> }).memory;
+    expect(memory.size).toBeLessThanOrEqual(4);
+  });
+
+  it('rejects an invalid fallback capacity', () => {
+    expect(() => new CompositeRateLimiter(failingRedis(), 10, 10, 60, 10, 'test', 1))
+      .toThrow(/maxMemoryEntries/);
+  });
 });
