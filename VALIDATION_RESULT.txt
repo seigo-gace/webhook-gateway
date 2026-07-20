@@ -2,11 +2,12 @@ G-ACE Universal Webhook Gateway v2.0.1 P0 integration validation result
 
 Validated repository:
 - seigo-gace/webhook-gateway
-- branch: agent/webhook-gateway-v2-complete
-- validated commit: dd5f23d1967371b5b2c9fb33199a4d2753917a8f
-- GitHub Actions run: 29780740299 (CI run 215)
+- pre-merge branch: agent/webhook-gateway-v2-complete
+- validated pre-merge commit: d7f110de2b1149a29a397d39b298fc40741ea797
+- successful pre-merge GitHub Actions run: 29780907111 (CI run 218)
+- merged main integration commit: 5cb7a78cf7e0ce333b62f3db31ae3d84ff3b8863
 - runner: Ubuntu 24.04 / Node.js 22 / PostgreSQL 17 / Redis 7
-- result: SUCCESS
+- pre-merge result: SUCCESS
 
 Architecture target:
 - Part -> Feature -> Component -> System -> Application
@@ -101,6 +102,6 @@ Not claimed:
 - No throughput, latency, memory, or GC performance number is claimed because a repeatable benchmark on the target deployment server has not yet been executed.
 - At-least-once delivery remains intentional; downstream destinations must enforce idempotency for ambiguous remote outcomes.
 
-Final release condition:
-- This result records the successful pre-merge implementation validation.
-- A final CI run must also succeed after this validation document update and again on main after merge.
+Main verification trigger:
+- This main-branch documentation commit intentionally triggers the same complete CI gate against the merged v2.0.1 implementation.
+- Release completion requires that main-branch CI run to succeed.
