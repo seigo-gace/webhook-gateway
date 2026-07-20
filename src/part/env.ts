@@ -1,82 +1,102 @@
 import 'dotenv/config';
+import { z } from 'zod';
 
-function intEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 0) throw new Error(`Invalid non-negative integer env: ${name}`);
-  return n;
-}
+const nonNegativeInt = (fallback: number) => z.preprocess(
+  (value) => value === undefined || value === '' ? fallback : Number(value),
+  z.number().int().nonnegative()
+);
 
-function legacyRecoveryIntervalMs(): number {
-  return process.env.RECOVERY_INTERVAL_MS
-    ? intEnv('RECOVERY_INTERVAL_MS', 30000)
-    : intEnv('RECOVERY_SWEEP_INTERVAL_MS', 30000);
-}
+const positiveInt = (fallback: number) => z.preprocess(
+  (value) => value === undefined || value === '' ? fallback : Number(value),
+  z.number().int().positive()
+);
 
-function boolEnv(name: string, fallback: boolean): boolean {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const normalized = raw.toLowerCase();
+const booleanValue = (fallback: boolean) => z.preprocess((value) => {
+  if (value === undefined || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase();
   if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
   if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
-  throw new Error(`Invalid boolean env: ${name}`);
+  return value;
+}, z.boolean());
+
+const environmentSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PORT: positiveInt(7373),
+  LOG_LEVEL: z.string().min(1).default('info'),
+  LOG_TO_TGSERVER: booleanValue(true),
+  TGSERVER_LOG_URL: z.string().default(''),
+  TGSERVER_LOG_SECRET: z.string().default(''),
+  TGSERVER_LOG_MIN_LEVEL: z.string().min(1).default('info'),
+  TGSERVER_LOG_TIMEOUT_MS: positiveInt(1000),
+  TGSERVER_LOG_FLUSH_INTERVAL_MS: positiveInt(2000),
+  TGSERVER_LOG_BATCH_SIZE: positiveInt(50),
+  TGSERVER_LOG_QUEUE_LIMIT: positiveInt(1000),
+  TRUST_PROXY: booleanValue(false),
+  ADMIN_ALLOWED_CIDRS: z.string().default(''),
+  DATABASE_URL: z.string().min(1).default('postgres://webhook:webhook_password@127.0.0.1:5432/webhook_gateway'),
+  REDIS_URL: z.string().min(1).default('redis://127.0.0.1:6379/0'),
+  QUEUE_NAME: z.string().min(1).default('webhook-deliveries'),
+  ADMIN_TOKEN: z.string().default(''),
+  MAX_BODY_BYTES: positiveInt(1_048_576),
+  DEFAULT_TOLERANCE_SECONDS: nonNegativeInt(300),
+  DELIVERY_TIMEOUT_MS: positiveInt(30_000),
+  DELIVERY_MAX_RESPONSE_BYTES: positiveInt(65_536),
+  DELIVERY_LEASE_SECONDS: positiveInt(90),
+  QUEUE_ENQUEUE_TIMEOUT_MS: positiveInt(1500),
+  REDIS_OPERATION_TIMEOUT_MS: positiveInt(500),
+  INGRESS_RATE_LIMIT_PER_MINUTE: positiveInt(600),
+  ADMIN_RATE_LIMIT_PER_MINUTE: positiveInt(60),
+  REPLAY_RATE_LIMIT_PER_MINUTE: positiveInt(10),
+  REPLAY_EVENT_COOLDOWN_SECONDS: nonNegativeInt(300),
+  REPLAY_DELIVERY_COOLDOWN_SECONDS: nonNegativeInt(60),
+  REPLAY_MAX_DELIVERIES_PER_REQUEST: positiveInt(100),
+  STORE_RAW_BODY: booleanValue(false),
+  BODY_RETENTION_DAYS: nonNegativeInt(7),
+  ENABLE_CLOCK_SKEW_CHECK: booleanValue(false),
+  CLOCK_SKEW_REQUIRED: booleanValue(false),
+  MAX_CLOCK_SKEW_SECONDS: nonNegativeInt(30),
+  CLOCK_SKEW_CACHE_SECONDS: positiveInt(30),
+  CLOCK_SKEW_CHECK_MODE: z.string().min(1).default('chronyc'),
+  ENABLE_EMERGENCY_SPOOL: booleanValue(true),
+  SPOOL_STORAGE_MODE: z.enum(['plain_dev', 'encrypted_volume', 'encrypted_file']).default('plain_dev'),
+  SPOOL_DIR: z.string().min(1).default('/spool'),
+  SPOOL_ENCRYPTION_KEY: z.string().default(''),
+  SPOOL_HMAC_KEY: z.string().default(''),
+  SPOOL_RETENTION_DAYS: nonNegativeInt(7),
+  SPOOL_FAILED_RETENTION_DAYS: nonNegativeInt(7),
+  SPOOL_IMPORT_BATCH_SIZE: positiveInt(50),
+  RECOVERY_INTERVAL_MS: positiveInt(30_000),
+  RECOVERY_DELIVERY_BATCH_SIZE: positiveInt(100),
+  STALE_DELIVERING_SECONDS: positiveInt(120),
+  OUTBOX_PUBLISH_INTERVAL_MS: positiveInt(500),
+  OUTBOX_BATCH_SIZE: positiveInt(100),
+  OUTBOX_LEASE_SECONDS: positiveInt(30),
+  WORKER_CONCURRENCY: positiveInt(10),
+  UNKNOWN_RETRY_ENABLED: booleanValue(true),
+  UNKNOWN_RETRY_BACKOFF_BASE_MS: positiveInt(5000),
+  RETRY_AFTER_MAX_SECONDS: positiveInt(21_600),
+  THROTTLE_RETRY_BACKOFF_BASE_MS: positiveInt(30_000),
+  INFRA_RETRY_BACKOFF_BASE_MS: positiveInt(10_000),
+  CLIENT_ERROR_RETRY_ENABLED: booleanValue(false),
+  DESTINATION_CIRCUIT_BREAKER_FAILURE_THRESHOLD: positiveInt(5),
+  DESTINATION_CIRCUIT_BREAKER_OPEN_SECONDS: positiveInt(300)
+});
+
+const input = {
+  ...process.env,
+  RECOVERY_INTERVAL_MS: process.env.RECOVERY_INTERVAL_MS ?? process.env.RECOVERY_SWEEP_INTERVAL_MS
+};
+
+const parsed = environmentSchema.safeParse(input);
+if (!parsed.success) {
+  const details = parsed.error.issues
+    .map((issue) => `${issue.path.join('.') || 'environment'}: ${issue.message}`)
+    .join('; ');
+  throw new Error(`Invalid environment configuration: ${details}`);
 }
 
-export const env = {
-  NODE_ENV: process.env.NODE_ENV ?? 'development',
-  PORT: intEnv('PORT', 7373),
-  LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
-  LOG_TO_TGSERVER: boolEnv('LOG_TO_TGSERVER', true),
-  TGSERVER_LOG_URL: process.env.TGSERVER_LOG_URL ?? '',
-  TGSERVER_LOG_SECRET: process.env.TGSERVER_LOG_SECRET ?? '',
-  TGSERVER_LOG_MIN_LEVEL: process.env.TGSERVER_LOG_MIN_LEVEL ?? 'info',
-  TGSERVER_LOG_TIMEOUT_MS: intEnv('TGSERVER_LOG_TIMEOUT_MS', 1000),
-  TGSERVER_LOG_FLUSH_INTERVAL_MS: intEnv('TGSERVER_LOG_FLUSH_INTERVAL_MS', 2000),
-  TGSERVER_LOG_BATCH_SIZE: intEnv('TGSERVER_LOG_BATCH_SIZE', 50),
-  TGSERVER_LOG_QUEUE_LIMIT: intEnv('TGSERVER_LOG_QUEUE_LIMIT', 1000),
-  TRUST_PROXY: boolEnv('TRUST_PROXY', false),
-  ADMIN_ALLOWED_CIDRS: process.env.ADMIN_ALLOWED_CIDRS ?? '',
-  DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://webhook:webhook_password@127.0.0.1:5432/webhook_gateway',
-  REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379/0',
-  QUEUE_NAME: process.env.QUEUE_NAME ?? 'webhook-deliveries',
-  ADMIN_TOKEN: process.env.ADMIN_TOKEN ?? '',
-  MAX_BODY_BYTES: intEnv('MAX_BODY_BYTES', 1048576),
-  DEFAULT_TOLERANCE_SECONDS: intEnv('DEFAULT_TOLERANCE_SECONDS', 300),
-  DELIVERY_TIMEOUT_MS: intEnv('DELIVERY_TIMEOUT_MS', 30000),
-  QUEUE_ENQUEUE_TIMEOUT_MS: intEnv('QUEUE_ENQUEUE_TIMEOUT_MS', 1500),
-  INGRESS_RATE_LIMIT_PER_MINUTE: intEnv('INGRESS_RATE_LIMIT_PER_MINUTE', 600),
-  ADMIN_RATE_LIMIT_PER_MINUTE: intEnv('ADMIN_RATE_LIMIT_PER_MINUTE', 60),
-  REPLAY_RATE_LIMIT_PER_MINUTE: intEnv('REPLAY_RATE_LIMIT_PER_MINUTE', 10),
-  REPLAY_EVENT_COOLDOWN_SECONDS: intEnv('REPLAY_EVENT_COOLDOWN_SECONDS', 300),
-  REPLAY_DELIVERY_COOLDOWN_SECONDS: intEnv('REPLAY_DELIVERY_COOLDOWN_SECONDS', 60),
-  REPLAY_MAX_DELIVERIES_PER_REQUEST: intEnv('REPLAY_MAX_DELIVERIES_PER_REQUEST', 100),
-  STORE_RAW_BODY: boolEnv('STORE_RAW_BODY', false),
-  BODY_RETENTION_DAYS: intEnv('BODY_RETENTION_DAYS', 7),
-  ENABLE_CLOCK_SKEW_CHECK: boolEnv('ENABLE_CLOCK_SKEW_CHECK', false),
-  CLOCK_SKEW_REQUIRED: boolEnv('CLOCK_SKEW_REQUIRED', false),
-  MAX_CLOCK_SKEW_SECONDS: intEnv('MAX_CLOCK_SKEW_SECONDS', 30),
-  CLOCK_SKEW_CACHE_SECONDS: intEnv('CLOCK_SKEW_CACHE_SECONDS', 30),
-  CLOCK_SKEW_CHECK_MODE: process.env.CLOCK_SKEW_CHECK_MODE ?? 'chronyc',
-  ENABLE_EMERGENCY_SPOOL: boolEnv('ENABLE_EMERGENCY_SPOOL', true),
-  SPOOL_STORAGE_MODE: process.env.SPOOL_STORAGE_MODE ?? 'plain_dev',
-  SPOOL_DIR: process.env.SPOOL_DIR ?? '/spool',
-  SPOOL_RETENTION_DAYS: intEnv('SPOOL_RETENTION_DAYS', 7),
-  SPOOL_FAILED_RETENTION_DAYS: intEnv('SPOOL_FAILED_RETENTION_DAYS', 7),
-  SPOOL_IMPORT_BATCH_SIZE: intEnv('SPOOL_IMPORT_BATCH_SIZE', 50),
-  RECOVERY_INTERVAL_MS: legacyRecoveryIntervalMs(),
-  RECOVERY_DELIVERY_BATCH_SIZE: intEnv('RECOVERY_DELIVERY_BATCH_SIZE', 100),
-  STALE_DELIVERING_SECONDS: intEnv('STALE_DELIVERING_SECONDS', 120),
-  WORKER_CONCURRENCY: intEnv('WORKER_CONCURRENCY', 10),
-  UNKNOWN_RETRY_ENABLED: boolEnv('UNKNOWN_RETRY_ENABLED', true),
-  UNKNOWN_RETRY_BACKOFF_BASE_MS: intEnv('UNKNOWN_RETRY_BACKOFF_BASE_MS', 5000),
-  RETRY_AFTER_MAX_SECONDS: intEnv('RETRY_AFTER_MAX_SECONDS', 21600),
-  THROTTLE_RETRY_BACKOFF_BASE_MS: intEnv('THROTTLE_RETRY_BACKOFF_BASE_MS', 30000),
-  INFRA_RETRY_BACKOFF_BASE_MS: intEnv('INFRA_RETRY_BACKOFF_BASE_MS', 10000),
-  CLIENT_ERROR_RETRY_ENABLED: boolEnv('CLIENT_ERROR_RETRY_ENABLED', false),
-  DESTINATION_CIRCUIT_BREAKER_FAILURE_THRESHOLD: intEnv('DESTINATION_CIRCUIT_BREAKER_FAILURE_THRESHOLD', 5),
-  DESTINATION_CIRCUIT_BREAKER_OPEN_SECONDS: intEnv('DESTINATION_CIRCUIT_BREAKER_OPEN_SECONDS', 300)
-};
+export const env = Object.freeze(parsed.data);
 
 export function requireEnv(name: string): string {
   const value = process.env[name];
