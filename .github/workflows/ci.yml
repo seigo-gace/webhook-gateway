@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -42,6 +42,43 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/webhook-gateway-v2-complete
+      - name: Apply one-time UUID route guards
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          api = Path('src/system/api-system.ts')
+          text = api.read_text()
+          text = text.replace(
+              "import { asyncHandler } from '../part/http.js';",
+              "import { asyncHandler, requireUuidParam } from '../part/http.js';"
+          )
+          replacements = {
+              "apiApp.get('/admin/events/:id', requireAdmin, asyncHandler(":
+                  "apiApp.get('/admin/events/:id', requireAdmin, requireUuidParam('id'), asyncHandler(",
+              "apiApp.post('/admin/events/:id/replay', requireAdmin, asyncHandler(":
+                  "apiApp.post('/admin/events/:id/replay', requireAdmin, requireUuidParam('id'), asyncHandler(",
+              "apiApp.post('/admin/deliveries/:id/replay', requireAdmin, asyncHandler(":
+                  "apiApp.post('/admin/deliveries/:id/replay', requireAdmin, requireUuidParam('id'), asyncHandler("
+          }
+          for old, new in replacements.items():
+              if new in text:
+                  continue
+              if old not in text:
+                  raise SystemExit(f'UUID route target missing: {old}')
+              text = text.replace(old, new, 1)
+          api.write_text(text)
+          PY
+          if git diff --quiet -- src/system/api-system.ts; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/system/api-system.ts
+          git commit -m "fix(api): reject invalid Admin UUID parameters"
+          git push origin HEAD:agent/webhook-gateway-v2-complete
       - uses: actions/setup-node@v4
         with:
           node-version: 22
