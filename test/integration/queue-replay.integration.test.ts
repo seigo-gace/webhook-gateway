@@ -5,8 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeQueue, deliveryQueue, enqueueDelivery, redisConnection } from '../../src/feature/queue.js';
 import { env } from '../../src/part/env.js';
 
-let worker: Worker;
-let workerRedis: Redis;
+let worker: Worker | undefined;
+let workerRedis: Redis | undefined;
 let shouldFail = false;
 const runs = new Map<string, number>();
 
@@ -19,7 +19,17 @@ async function waitUntil(predicate: () => boolean | Promise<boolean>, timeoutMs 
   throw new Error('condition timeout');
 }
 
+async function waitForRedisReady(): Promise<void> {
+  await waitUntil(() => redisConnection.status === 'ready', 10_000);
+  await redisConnection.ping();
+}
+
+async function jobRemoved(deliveryId: string): Promise<boolean> {
+  return (await deliveryQueue.getJob(deliveryId)) == null;
+}
+
 beforeAll(async () => {
+  await waitForRedisReady();
   await redisConnection.flushdb();
   workerRedis = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
   worker = new Worker(
@@ -35,8 +45,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await worker.close();
-  if (workerRedis.status !== 'end') await workerRedis.quit();
+  if (worker) await worker.close();
+  if (workerRedis && workerRedis.status !== 'end') await workerRedis.quit();
   await closeQueue();
 });
 
@@ -47,11 +57,11 @@ describe('BullMQ transport lifecycle', () => {
 
     await enqueueDelivery(deliveryId);
     await waitUntil(() => runs.get(deliveryId) === 1);
-    await waitUntil(async () => (await deliveryQueue.getJob(deliveryId)) === undefined);
+    await waitUntil(() => jobRemoved(deliveryId));
 
     await enqueueDelivery(deliveryId);
     await waitUntil(() => runs.get(deliveryId) === 2);
-    await waitUntil(async () => (await deliveryQueue.getJob(deliveryId)) === undefined);
+    await waitUntil(() => jobRemoved(deliveryId));
 
     expect(runs.get(deliveryId)).toBe(2);
   });
@@ -62,12 +72,12 @@ describe('BullMQ transport lifecycle', () => {
 
     await enqueueDelivery(deliveryId);
     await waitUntil(() => runs.get(deliveryId) === 1);
-    await waitUntil(async () => (await deliveryQueue.getJob(deliveryId)) === undefined);
+    await waitUntil(() => jobRemoved(deliveryId));
 
     shouldFail = false;
     await enqueueDelivery(deliveryId);
     await waitUntil(() => runs.get(deliveryId) === 2);
-    await waitUntil(async () => (await deliveryQueue.getJob(deliveryId)) === undefined);
+    await waitUntil(() => jobRemoved(deliveryId));
 
     expect(runs.get(deliveryId)).toBe(2);
   });
