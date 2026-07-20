@@ -5,15 +5,8 @@ function read(path: string): string {
   return fs.readFileSync(path, 'utf8');
 }
 
-function functionBody(source: string, functionName: string): string {
-  const start = source.indexOf(`async function ${functionName}`);
-  expect(start).toBeGreaterThan(-1);
-  const nextFunction = source.indexOf('\nasync function ', start + 1);
-  return nextFunction === -1 ? source.slice(start) : source.slice(start, nextFunction);
-}
-
-describe('production recovery static guards', () => {
-  it('worker recovery imports emergency spool files instead of only counting them', () => {
+describe('production recovery and concurrency guards', () => {
+  it('imports and classifies emergency spool files', () => {
     const worker = read('src/system/worker-system.ts');
     for (const required of [
       'listSpoolFiles',
@@ -34,55 +27,54 @@ describe('production recovery static guards', () => {
     }
   });
 
-  it('worker only delivers queued, retrying, or unknown rows', () => {
-    const worker = read('src/system/worker-system.ts');
-    expect(worker).toContain("const deliverableStatuses = new Set(['queued', 'retrying', 'unknown'])");
-    expect(worker).toContain('delivery_skipped_status');
-  });
-
-  it('worker skips missing or disabled destinations instead of retry-looping them', () => {
-    const worker = read('src/system/worker-system.ts');
-    const processDelivery = functionBody(worker, 'processDelivery');
-    expect(processDelivery).toContain("SET status='skipped'");
-    expect(processDelivery).toContain('delivery_destination_skipped');
-    expect(processDelivery).not.toContain('throw new Error(`Destination not found');
-  });
-
-  it('worker claims deliveries atomically before dispatch', () => {
-    const worker = read('src/system/worker-system.ts');
-    const processDelivery = functionBody(worker, 'processDelivery');
-    expect(processDelivery).toContain("WHERE id=$1 AND status IN ('queued','retrying','unknown')");
-    expect(processDelivery).toContain('RETURNING attempt_count');
-    expect(processDelivery).toContain('delivery_claim_skipped');
-  });
-
-  it('worker purges expired raw event bodies during recovery', () => {
+  it('claims deliveries through the PostgreSQL lease boundary before HTTP dispatch', () => {
     const worker = read('src/system/worker-system.ts');
     const db = read('src/feature/db.ts');
-    const recovery = functionBody(worker, 'recoverySweep');
+    expect(worker).toContain('claimDelivery(deliveryId, env.DELIVERY_LEASE_SECONDS)');
+    expect(worker).toContain('beginDeliveryAttempt(deliveryId, claim.lockToken)');
+    expect(worker).toContain('delivery_claim_skipped');
+    expect(db).toContain("status='delivering'");
+    expect(db).toContain('lock_token=gen_random_uuid()');
+    expect(db).toContain("status IN ('queued','retrying','unknown')");
+    expect(db).toContain("status='delivering' AND lock_expires_at < now()");
+  });
+
+  it('skips missing destinations without creating an infinite retry loop', () => {
+    const worker = read('src/system/worker-system.ts');
+    expect(worker).toContain("status: 'skipped'");
+    expect(worker).toContain('delivery_destination_skipped');
+    expect(worker).not.toContain('throw new Error(`Destination not found');
+  });
+
+  it('publishes the transactional outbox with leased SKIP LOCKED claims', () => {
+    const worker = read('src/system/worker-system.ts');
+    const db = read('src/feature/db.ts');
+    expect(worker).toContain('publishOutboxBatch');
+    expect(worker).toContain('markOutboxPublished');
+    expect(worker).toContain('markOutboxFailed');
+    expect(db).toContain('FOR UPDATE SKIP LOCKED');
+    expect(db).toContain("status='publishing'");
+    expect(db).toContain("status='published'");
+  });
+
+  it('purges expired raw bodies and recovers stale delivery leases', () => {
+    const worker = read('src/system/worker-system.ts');
+    const db = read('src/feature/db.ts');
     expect(worker).toContain('purgeExpiredEventBodies');
-    expect(recovery).toContain('raw_body_retention_purged');
+    expect(worker).toContain('raw_body_retention_purged');
+    expect(worker).toContain('lock_expires_at');
+    expect(worker).toContain("SET status='retrying', lock_token=NULL, lock_expires_at=NULL");
     expect(db).toContain('body_text=NULL');
     expect(db).toContain('BODY_RETENTION_DAYS must be >= 0');
   });
 
-  it('worker resets stale delivering rows before selecting due deliveries inside recoverySweep', () => {
-    const worker = read('src/system/worker-system.ts');
-    const recovery = functionBody(worker, 'recoverySweep');
-    const staleReset = recovery.indexOf("status='delivering'");
-    const spoolImport = recovery.indexOf('importSpoolBatch');
-    const dueSelect = recovery.indexOf("status IN ('queued','retrying','unknown')");
-    expect(staleReset).toBeGreaterThan(-1);
-    expect(spoolImport).toBeGreaterThan(-1);
-    expect(dueSelect).toBeGreaterThan(-1);
-    expect(staleReset).toBeLessThan(spoolImport);
-    expect(spoolImport).toBeLessThan(dueSelect);
-  });
-
-  it('ci keeps the GitHub-side validation loop active', () => {
+  it('keeps the complete CI validation loop active', () => {
     const ci = read('.github/workflows/ci.yml');
+    expect(ci).toContain('npm run typecheck');
+    expect(ci).toContain('npm run test:ci');
     expect(ci).toContain('npm run build');
-    expect(ci).toContain('npm test');
+    expect(ci).toContain('docker build --target runtime');
+    expect(ci).toContain('docker compose config --quiet');
     expect(ci).toContain('npm audit --audit-level=high');
   });
 });
