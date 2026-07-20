@@ -135,7 +135,7 @@ describe('Webhook Gateway real end-to-end flow', () => {
        JOIN deliveries d ON d.event_id=e.id
        JOIN delivery_outbox o ON o.delivery_id=d.id
        WHERE e.provider_event_id=$1`,
-      [`github:${deliveryId}`]
+      [deliveryId]
     );
     expect(durable.rows).toHaveLength(1);
     expect(durable.rows[0].delivery_status).toBe('queued');
