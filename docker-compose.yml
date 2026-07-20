@@ -45,8 +45,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     ports:
       - "127.0.0.1:7373:7373"
     volumes:
