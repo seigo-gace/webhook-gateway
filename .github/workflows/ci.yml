@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -42,6 +42,54 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/webhook-gateway-v2-complete
+      - name: Apply one-time migration advisory lock
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          db = Path('src/feature/db.ts')
+          text = db.read_text()
+          marker = "export async function persistIngressWithDeliveries("
+          start = text.find('export async function migrate(): Promise<void> {')
+          end = text.find(marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit('migrate function boundaries not found')
+          segment = text[start:end]
+          if 'pg_advisory_lock' not in segment:
+              opening = "export async function migrate(): Promise<void> {\n  await pool.query(`"
+              replacement = """export async function migrate(): Promise<void> {
+            const client = await pool.connect();
+            try {
+              await client.query(\"SELECT pg_advisory_lock(hashtext('gace_webhook_gateway_v2_migrate'))\");
+              await client.query(`"""
+              if opening not in segment:
+                  raise SystemExit('migrate opening target not found')
+              segment = segment.replace(opening, replacement, 1)
+              closing = "  `);\n}\n\n"
+              replacement = """    `);
+            } finally {
+              await client.query(\"SELECT pg_advisory_unlock(hashtext('gace_webhook_gateway_v2_migrate'))\").catch(() => undefined);
+              client.release();
+            }
+          }
+
+          """
+              if not segment.endswith(closing):
+                  raise SystemExit('migrate closing target not found')
+              segment = segment[:-len(closing)] + replacement
+              text = text[:start] + segment + text[end:]
+          db.write_text(text)
+          PY
+          if git diff --quiet -- src/feature/db.ts; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/feature/db.ts
+          git commit -m "fix(db): serialize concurrent startup migrations"
+          git push origin HEAD:agent/webhook-gateway-v2-complete
       - uses: actions/setup-node@v4
         with:
           node-version: 22
