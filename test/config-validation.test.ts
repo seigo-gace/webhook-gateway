@@ -34,4 +34,40 @@ describe('runtime gateway config validation', () => {
     config.routes[0].enabled = 'yes';
     expect(() => validateGatewayConfig(config)).toThrow(/enabled must be boolean/);
   });
+
+  it('rejects custom headers that can override gateway integrity metadata', () => {
+    const config = configCopy();
+    config.destinations[0].headers = { 'x-gace-event-id': 'attacker-controlled' };
+    expect(() => validateGatewayConfig(config)).toThrow(/reserved/);
+  });
+
+  it('rejects hop-by-hop and transport-owned headers', () => {
+    const config = configCopy();
+    config.destinations[0].headers = { Host: 'internal.example' };
+    expect(() => validateGatewayConfig(config)).toThrow(/reserved/);
+  });
+
+  it('rejects header injection and non-string values from untyped JSON', () => {
+    const injected = configCopy();
+    injected.destinations[0].headers = { 'x-safe': 'ok\r\nx-injected: true' };
+    expect(() => validateGatewayConfig(injected)).toThrow(/CR or LF/);
+
+    const nonString = configCopy() as any;
+    nonString.destinations[0].headers = { 'x-count': 10 };
+    expect(() => validateGatewayConfig(nonString)).toThrow(/value must be a string/);
+  });
+
+  it('rejects invalid acceptance proof header names and values', () => {
+    const invalidName = configCopy();
+    invalidName.destinations[0].successMode = 'status_and_header';
+    invalidName.destinations[0].acceptedHeader = 'bad header';
+    invalidName.destinations[0].acceptedHeaderValue = 'true';
+    expect(() => validateGatewayConfig(invalidName)).toThrow(/valid HTTP header name/);
+
+    const invalidValue = configCopy();
+    invalidValue.destinations[0].successMode = 'status_and_header';
+    invalidValue.destinations[0].acceptedHeader = 'x-accepted';
+    invalidValue.destinations[0].acceptedHeaderValue = 'true\nfalse';
+    expect(() => validateGatewayConfig(invalidValue)).toThrow(/CR or LF/);
+  });
 });
