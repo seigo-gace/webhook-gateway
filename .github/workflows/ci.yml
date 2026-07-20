@@ -48,38 +48,48 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           worker = Path('src/system/worker-system.ts')
           text = worker.read_text()
-          text = text.replace(
-              'async function importSpoolFile(filePath: string): Promise<SpoolSweepResult> {',
-              'export async function importSpoolFile(filePath: string): Promise<SpoolSweepResult> {'
+          text, export_count = re.subn(
+              r'(?m)^async function importSpoolFile\(filePath: string\): Promise<SpoolSweepResult> \{$',
+              'export async function importSpoolFile(filePath: string): Promise<SpoolSweepResult> {',
+              text
           )
-          old = """    const deliverySummary = event.duplicate
-              ? { deliveries: 0, enqueued: 0 }
-              : await createAndEnqueueDeliveriesForImportedEvent(event.id, source, verified.eventType);"""
-          new = """    // Always reconcile idempotent delivery rows. A prior recovery attempt may
+          if export_count not in (0, 1):
+              raise SystemExit(f'unexpected importSpoolFile export count: {export_count}')
+          pattern = re.compile(
+              r'(?m)^    const deliverySummary = event\.duplicate\n'
+              r'      \? \{ deliveries: 0, enqueued: 0 \}\n'
+              r'      : await createAndEnqueueDeliveriesForImportedEvent\(event\.id, source, verified\.eventType\);$'
+          )
+          replacement = """    // Always reconcile idempotent delivery rows. A prior recovery attempt may
               // have inserted the event and failed before creating every delivery/outbox row.
               const deliverySummary = await createAndEnqueueDeliveriesForImportedEvent(
                 event.id,
                 source,
                 verified.eventType
               );"""
-          if old not in text and new not in text:
+          text, reconcile_count = pattern.subn(replacement, text)
+          if reconcile_count == 0 and 'Always reconcile idempotent delivery rows' not in text:
               raise SystemExit('worker reconciliation target not found')
-          text = text.replace(old, new)
+          if reconcile_count > 1:
+              raise SystemExit(f'unexpected worker reconciliation count: {reconcile_count}')
           worker.write_text(text)
 
           api = Path('src/system/api-system.ts')
           text = api.read_text()
-          old = """  try {
-              await redisConnection.ping();
-              checks.redis = true;
-            } catch (error) {
-              ok = false;
-              checks.redis = sanitizeText(error, 300);
-            }"""
-          new = """  try {
+          pattern = re.compile(
+              r"(?m)^  try \{\n"
+              r"    await redisConnection\.ping\(\);\n"
+              r"    checks\.redis = true;\n"
+              r"  \} catch \(error\) \{\n"
+              r"    ok = false;\n"
+              r"    checks\.redis = sanitizeText\(error, 300\);\n"
+              r"  \}$"
+          )
+          replacement = """  try {
               await redisConnection.ping();
               checks.redis = { ok: true, requiredForIngress: false };
             } catch (error) {
@@ -92,9 +102,11 @@ jobs:
                 error: sanitizeText(error, 300)
               };
             }"""
-          if old not in text and new not in text:
+          text, readiness_count = pattern.subn(replacement, text)
+          if readiness_count == 0 and 'requiredForIngress: false' not in text:
               raise SystemExit('readiness degradation target not found')
-          text = text.replace(old, new)
+          if readiness_count > 1:
+              raise SystemExit(f'unexpected readiness replacement count: {readiness_count}')
           api.write_text(text)
           PY
           if git diff --quiet -- src/system/worker-system.ts src/system/api-system.ts; then
