@@ -19,6 +19,26 @@ const methods = new Set(['POST', 'PUT', 'PATCH']);
 const payloadModes = new Set(['raw', 'json', 'cloudevents']);
 const successModes = new Set(['status_only', 'status_and_header']);
 const unknownPolicies = new Set(['retry_then_dead', 'dead_immediately', 'treat_2xx_as_delivered']);
+const httpTokenPattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+const reservedDestinationHeaders = new Set([
+  'host',
+  'content-length',
+  'transfer-encoding',
+  'connection',
+  'upgrade',
+  'te',
+  'trailer',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'content-type',
+  'x-gace-event-id',
+  'x-gace-delivery-id',
+  'x-gace-provider',
+  'webhook-id',
+  'webhook-timestamp',
+  'webhook-signature'
+]);
 
 export function loadGatewayConfig(): GatewayConfig {
   const file = path.resolve(process.cwd(), 'config/webhooks.json');
@@ -123,11 +143,13 @@ export function validateGatewayConfig(config: GatewayConfig): void {
         throw new Error(`destination ${destination.id} circuitBreaker.openSeconds must be an integer >= 1`);
       }
     }
-    if (destination.headers !== undefined && (typeof destination.headers !== 'object' || destination.headers === null || Array.isArray(destination.headers))) {
-      throw new Error(`destination ${destination.id} headers must be an object`);
-    }
-    if (destination.successMode === 'status_and_header' && (!destination.acceptedHeader || !destination.acceptedHeaderValue)) {
-      throw new Error(`destination ${destination.id} status_and_header requires acceptedHeader and acceptedHeaderValue`);
+    validateDestinationHeaders(destination.id, destination.headers);
+    if (destination.successMode === 'status_and_header') {
+      if (!destination.acceptedHeader || !destination.acceptedHeaderValue) {
+        throw new Error(`destination ${destination.id} status_and_header requires acceptedHeader and acceptedHeaderValue`);
+      }
+      validateHeaderName(`destination ${destination.id} acceptedHeader`, destination.acceptedHeader);
+      validateHeaderValue(`destination ${destination.id} acceptedHeaderValue`, destination.acceptedHeaderValue);
     }
   }
 
@@ -150,6 +172,32 @@ function validateAllowlist(label: string, rules: string[]): void {
   for (const rule of rules) {
     if (!isValidAllowlistRule(rule)) throw new Error(`Invalid ${label} rule: ${rule}`);
   }
+}
+
+function validateDestinationHeaders(destinationId: string, headers: unknown): void {
+  if (headers === undefined) return;
+  if (typeof headers !== 'object' || headers === null || Array.isArray(headers)) {
+    throw new Error(`destination ${destinationId} headers must be an object`);
+  }
+  for (const [name, value] of Object.entries(headers)) {
+    validateHeaderName(`destination ${destinationId} header`, name);
+    if (reservedDestinationHeaders.has(name.toLowerCase())) {
+      throw new Error(`destination ${destinationId} header ${name} is reserved`);
+    }
+    if (typeof value !== 'string') {
+      throw new Error(`destination ${destinationId} header ${name} value must be a string`);
+    }
+    validateHeaderValue(`destination ${destinationId} header ${name}`, value);
+  }
+}
+
+function validateHeaderName(label: string, value: string): void {
+  if (!httpTokenPattern.test(value)) throw new Error(`${label} is not a valid HTTP header name`);
+}
+
+function validateHeaderValue(label: string, value: string): void {
+  if (/[
+]/.test(value)) throw new Error(`${label} must not contain CR or LF`);
 }
 
 function validateProductionValue(label: string, value: string, options: { minLength: number }): void {
