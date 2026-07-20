@@ -50,7 +50,23 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Typecheck
-        run: npm run typecheck
+        id: typecheck
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck.log
+      - name: Upload typecheck diagnostics
+        if: always() && steps.typecheck.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-diagnostics
+          path: typecheck.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Enforce typecheck result
+        if: steps.typecheck.outcome == 'failure'
+        run: exit 1
       - name: Unit, integration, concurrency, and E2E tests
         run: npm run test:ci
       - name: Build production JavaScript
