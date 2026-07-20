@@ -42,8 +42,9 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/webhook-gateway-v2-complete
       - name: Apply one-time P0 recovery patches
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/agent/')
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -103,7 +104,7 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add src/system/worker-system.ts src/system/api-system.ts
           git commit -m "fix(p0): reconcile spool deliveries and degrade without Redis"
-          git push
+          git push origin HEAD:agent/webhook-gateway-v2-complete
       - uses: actions/setup-node@v4
         with:
           node-version: 22
