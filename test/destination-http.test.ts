@@ -41,8 +41,12 @@ describe('destination HTTP security', () => {
     expect(resolved.address).toBe('10.0.0.10');
   });
 
-  it('bounds downstream response bodies', async () => {
+  it('truncates downstream response bodies without turning HTTP success into failure', async () => {
     const response = new Response('1234567890');
-    await expect(readResponseBodyLimited(response, 5)).rejects.toThrow('DELIVERY_RESPONSE_BODY_TOO_LARGE');
+    await expect(readResponseBodyLimited(response, 5)).resolves.toBe('12345\n[TRUNCATED]');
+  });
+
+  it('rejects invalid response limits', async () => {
+    await expect(readResponseBodyLimited(new Response('ok'), 0)).rejects.toThrow('maxBytes');
   });
 });
