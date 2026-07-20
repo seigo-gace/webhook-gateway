@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -42,86 +42,6 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: agent/webhook-gateway-v2-complete
-      - name: Apply one-time Express async boundary patch
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          api = Path('src/system/api-system.ts')
-          text = api.read_text()
-          import_line = "import { asyncHandler } from '../part/http.js';\n"
-          if import_line not in text:
-              anchor = "import { sha256Hex } from '../part/crypto.js';\n"
-              if anchor not in text:
-                  raise SystemExit('API import anchor not found')
-              text = text.replace(anchor, anchor + import_line, 1)
-
-          routes = [
-              ("apiApp.get('/readyz', async (_req, res) => {", "apiApp.get('/metrics'"),
-              ("apiApp.get('/metrics', async (_req, res) => {", "function requestIp"),
-              ("apiApp.get('/admin/events', requireAdmin, async (req, res) => {", "apiApp.get('/admin/events/:id'"),
-              ("apiApp.get('/admin/events/:id', requireAdmin, async (req, res) => {", "apiApp.post('/admin/events/:id/replay'"),
-              ("apiApp.post('/admin/events/:id/replay', requireAdmin, async (req, res) => {", "apiApp.post('/admin/deliveries/:id/replay'"),
-              ("apiApp.post('/admin/deliveries/:id/replay', requireAdmin, async (req, res) => {", "apiApp.get('/admin/audit-logs'"),
-              ("apiApp.get('/admin/audit-logs', requireAdmin, async (_req, res) => {", "apiApp.post('/ingress/:slug'"),
-              ("apiApp.post('/ingress/:slug', express.raw({ type: '*/*', limit: env.MAX_BODY_BYTES }), async (req, res) => {", "async function replayDenied")
-          ]
-
-          for start, next_marker in routes:
-              wrapped = start.replace(', async (', ', asyncHandler(async (')
-              if wrapped in text:
-                  continue
-              start_index = text.find(start)
-              if start_index < 0:
-                  raise SystemExit(f'route start not found: {start}')
-              next_index = text.find(next_marker, start_index + len(start))
-              if next_index < 0:
-                  raise SystemExit(f'route end marker not found: {next_marker}')
-              text = text[:start_index] + wrapped + text[start_index + len(start):]
-              delta = len(wrapped) - len(start)
-              next_index += delta
-              segment = text[start_index:next_index]
-              close_index = segment.rfind('\n});')
-              if close_index < 0:
-                  raise SystemExit(f'route closing not found before: {next_marker}')
-              absolute = start_index + close_index
-              text = text[:absolute] + '\n}));' + text[absolute + len('\n});'):]
-
-          error_boundary = """apiApp.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
-            if (res.headersSent) {
-              next(error);
-              return;
-            }
-            logGatewayEvent({
-              level: 'error',
-              event: 'api_unhandled_error',
-              component: 'api-system',
-              message: 'Unhandled API route error',
-              details: { error: sanitizeText(error, 300) }
-            });
-            res.status(500).json({ error: 'internal server error' });
-          });
-
-          """
-          marker = 'async function replayDenied('
-          if 'api_unhandled_error' not in text:
-              index = text.find(marker)
-              if index < 0:
-                  raise SystemExit('replayDenied marker not found')
-              text = text[:index] + error_boundary + text[index:]
-
-          api.write_text(text)
-          PY
-          if git diff --quiet -- src/system/api-system.ts; then
-            exit 0
-          fi
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src/system/api-system.ts
-          git commit -m "fix(api): route async failures through sanitized boundary"
-          git push origin HEAD:agent/webhook-gateway-v2-complete
       - uses: actions/setup-node@v4
         with:
           node-version: 22
