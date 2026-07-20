@@ -57,10 +57,16 @@ apiApp.get('/readyz', async (_req, res) => {
   }
   try {
     await redisConnection.ping();
-    checks.redis = true;
+    checks.redis = { ok: true, requiredForIngress: false };
   } catch (error) {
-    ok = false;
-    checks.redis = sanitizeText(error, 300);
+    // Redis transports delivery jobs but is not the durable source of truth.
+    // Keep ingress ready while reporting degraded asynchronous delivery.
+    checks.redis = {
+      ok: false,
+      requiredForIngress: false,
+      degraded: true,
+      error: sanitizeText(error, 300)
+    };
   }
   const skew = await checkClockSkew();
   checks.clock = skew;

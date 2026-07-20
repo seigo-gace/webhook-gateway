@@ -440,7 +440,7 @@ async function moveCorruptedSpoolFile(filePath: string, reason: string, error?: 
   }
 }
 
-async function importSpoolFile(filePath: string): Promise<SpoolSweepResult> {
+export async function importSpoolFile(filePath: string): Promise<SpoolSweepResult> {
   const lockedPath = await lockSpoolFile(filePath);
   if (!lockedPath) return 'skipped';
 
@@ -474,9 +474,13 @@ async function importSpoolFile(filePath: string): Promise<SpoolSweepResult> {
       cloudEvent: payload.cloudEvent,
       receivedIp: undefined
     });
-    const deliverySummary = event.duplicate
-      ? { deliveries: 0, enqueued: 0 }
-      : await createAndEnqueueDeliveriesForImportedEvent(event.id, source, verified.eventType);
+    // Always reconcile idempotent delivery rows. A prior recovery attempt may
+    // have inserted the event and failed before creating every delivery/outbox row.
+    const deliverySummary = await createAndEnqueueDeliveriesForImportedEvent(
+      event.id,
+      source,
+      verified.eventType
+    );
     await removeSpoolFile(lockedPath);
     logGatewayEvent({
       level: event.duplicate ? 'info' : 'warn',
