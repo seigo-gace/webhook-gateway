@@ -5,6 +5,7 @@ import { env } from '../part/env.js';
 import { loadGatewayConfig, validateGatewayConfig } from '../feature/config.js';
 import { verifyInbound } from '../feature/verifiers.js';
 import { sha256Hex } from '../part/crypto.js';
+import { asyncHandler } from '../part/http.js';
 import { migrate, persistIngressWithDeliveries, audit, closeDb, pool, checkReplayCooldown } from '../feature/db.js';
 import { enqueueDeliveryBestEffort, enqueueDeliveryDeferred, closeQueue, redisConnection } from '../feature/queue.js';
 import { writeSpoolFile, countSpoolFiles } from '../feature/spool.js';
@@ -45,7 +46,7 @@ const replayLimiter = new FixedWindowRateLimiter(env.REPLAY_RATE_LIMIT_PER_MINUT
 apiApp.use(helmet());
 apiApp.get('/healthz', (_req, res) => res.json({ ok: true }));
 
-apiApp.get('/readyz', async (_req, res) => {
+apiApp.get('/readyz', asyncHandler(async (_req, res) => {
   const checks: Record<string, unknown> = {};
   let ok = true;
   try {
@@ -77,15 +78,15 @@ apiApp.get('/readyz', async (_req, res) => {
   spoolFileGauge.set(spoolCounts.pending);
   spoolFailedFileGauge.set(spoolCounts.failed);
   res.status(ok ? 200 : 503).json({ ok, checks: sanitizeObject(checks) });
-});
+}));
 
-apiApp.get('/metrics', async (_req, res) => {
+apiApp.get('/metrics', asyncHandler(async (_req, res) => {
   const spoolCounts = await countSpoolFiles();
   spoolFileGauge.set(spoolCounts.pending);
   spoolFailedFileGauge.set(spoolCounts.failed);
   res.setHeader('content-type', registry.contentType);
   res.end(await registry.metrics());
-});
+}));
 
 function requestIp(req: express.Request): string | undefined {
   return req.ip || req.socket.remoteAddress || undefined;
@@ -120,7 +121,7 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
   next();
 }
 
-apiApp.get('/admin/events', requireAdmin, async (req, res) => {
+apiApp.get('/admin/events', requireAdmin, asyncHandler(async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit ?? 50), 1), 200);
   const rows = await pool.query(
     `SELECT id, source_id, provider, provider_event_id, event_type, status, received_at, updated_at
@@ -128,9 +129,9 @@ apiApp.get('/admin/events', requireAdmin, async (req, res) => {
     [limit]
   );
   res.json({ events: rows.rows });
-});
+}));
 
-apiApp.get('/admin/events/:id', requireAdmin, async (req, res) => {
+apiApp.get('/admin/events/:id', requireAdmin, asyncHandler(async (req, res) => {
   const event = await pool.query('SELECT * FROM events WHERE id=$1', [req.params.id]);
   if (!event.rows[0]) return res.status(404).json({ error: 'event not found' });
   const deliveries = await pool.query(
@@ -138,9 +139,9 @@ apiApp.get('/admin/events/:id', requireAdmin, async (req, res) => {
     [req.params.id]
   );
   res.json({ event: event.rows[0], deliveries: deliveries.rows });
-});
+}));
 
-apiApp.post('/admin/events/:id/replay', requireAdmin, async (req, res) => {
+apiApp.post('/admin/events/:id/replay', requireAdmin, asyncHandler(async (req, res) => {
   const rate = replayLimiter.check(`event:${req.params.id}`);
   if (!rate.allowed) {
     return replayDenied(req, res, 'event', req.params.id, rate.retryAfterSeconds ?? env.REPLAY_EVENT_COOLDOWN_SECONDS);
@@ -179,9 +180,9 @@ apiApp.post('/admin/events/:id/replay', requireAdmin, async (req, res) => {
     details: { requeued: deliveries.rows.length }
   });
   res.json({ ok: true, requeued: deliveries.rows.length });
-});
+}));
 
-apiApp.post('/admin/deliveries/:id/replay', requireAdmin, async (req, res) => {
+apiApp.post('/admin/deliveries/:id/replay', requireAdmin, asyncHandler(async (req, res) => {
   const rate = replayLimiter.check(`delivery:${req.params.id}`);
   if (!rate.allowed) {
     return replayDenied(req, res, 'delivery', req.params.id, rate.retryAfterSeconds ?? env.REPLAY_DELIVERY_COOLDOWN_SECONDS);
@@ -214,14 +215,14 @@ apiApp.post('/admin/deliveries/:id/replay', requireAdmin, async (req, res) => {
     deliveryId: req.params.id
   });
   res.json({ ok: true, deliveryId: delivery.rows[0].id });
-});
+}));
 
-apiApp.get('/admin/audit-logs', requireAdmin, async (_req, res) => {
+apiApp.get('/admin/audit-logs', requireAdmin, asyncHandler(async (_req, res) => {
   const rows = await pool.query('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100');
   res.json({ auditLogs: rows.rows });
-});
+}));
 
-apiApp.post('/ingress/:slug', express.raw({ type: '*/*', limit: env.MAX_BODY_BYTES }), async (req, res) => {
+apiApp.post('/ingress/:slug', express.raw({ type: '*/*', limit: env.MAX_BODY_BYTES }), asyncHandler(async (req, res) => {
   const source = config.sources.find((item) => item.slug === req.params.slug && item.enabled);
   if (!source) {
     logGatewayEvent({
@@ -394,6 +395,21 @@ apiApp.post('/ingress/:slug', express.raw({ type: '*/*', limit: env.MAX_BODY_BYT
       return res.status(503).json({ ok: false, error: 'durable storage unavailable' });
     }
   }
+}));
+
+apiApp.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) {
+    next(error);
+    return;
+  }
+  logGatewayEvent({
+    level: 'error',
+    event: 'api_unhandled_error',
+    component: 'api-system',
+    message: 'Unhandled API route error',
+    details: { error: sanitizeText(error, 300) }
+  });
+  res.status(500).json({ error: 'internal server error' });
 });
 
 async function replayDenied(
