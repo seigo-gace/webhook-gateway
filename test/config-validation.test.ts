@@ -12,13 +12,13 @@ describe('runtime gateway config validation', () => {
   });
 
   it('rejects unsupported provider values from untyped JSON', () => {
-    const config = configCopy() as unknown as { sources: Array<Record<string, unknown>> } & GatewayConfig;
+    const config = configCopy() as any;
     config.sources[0].provider = 'invented-provider';
     expect(() => validateGatewayConfig(config)).toThrow(/unsupported provider/);
   });
 
   it('rejects unsupported outbound methods from untyped JSON', () => {
-    const config = configCopy() as unknown as { destinations: Array<Record<string, unknown>> } & GatewayConfig;
+    const config = configCopy() as any;
     config.destinations[0].method = 'DELETE';
     expect(() => validateGatewayConfig(config)).toThrow(/unsupported method/);
   });
@@ -30,7 +30,7 @@ describe('runtime gateway config validation', () => {
   });
 
   it('rejects non-boolean enabled values from JSON', () => {
-    const config = configCopy() as unknown as { routes: Array<Record<string, unknown>> } & GatewayConfig;
+    const config = configCopy() as any;
     config.routes[0].enabled = 'yes';
     expect(() => validateGatewayConfig(config)).toThrow(/enabled must be boolean/);
   });
