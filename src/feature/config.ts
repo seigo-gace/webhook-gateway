@@ -4,7 +4,21 @@ import { env, optionalEnv } from '../part/env.js';
 import { decodeSecret } from '../part/crypto.js';
 import { isValidAllowlistRule, splitAllowlist } from '../part/ip-allowlist.js';
 import { validateDestinationUrl } from '../part/url-security.js';
-import type { GatewayConfig } from '../part/types.js';
+import type { GatewayConfig, Provider } from '../part/types.js';
+
+const providers = new Set<Provider>([
+  'standard',
+  'github',
+  'stripe',
+  'slack',
+  'telegram',
+  'generic-hmac-sha256',
+  'none'
+]);
+const methods = new Set(['POST', 'PUT', 'PATCH']);
+const payloadModes = new Set(['raw', 'json', 'cloudevents']);
+const successModes = new Set(['status_only', 'status_and_header']);
+const unknownPolicies = new Set(['retry_then_dead', 'dead_immediately', 'treat_2xx_as_delivered']);
 
 export function loadGatewayConfig(): GatewayConfig {
   const file = path.resolve(process.cwd(), 'config/webhooks.json');
@@ -44,6 +58,8 @@ export function validateGatewayConfig(config: GatewayConfig): void {
 
   for (const source of config.sources) {
     if (!source.id || !source.slug || !source.provider) throw new Error(`Invalid source config: ${source.id}`);
+    if (!providers.has(source.provider)) throw new Error(`source ${source.id} has unsupported provider ${String(source.provider)}`);
+    if (typeof source.enabled !== 'boolean') throw new Error(`source ${source.id} enabled must be boolean`);
     addUnique(sourceIds, source.id, 'source id');
     addUnique(sourceSlugs, source.slug, 'source slug');
     if (source.allowedCidrs !== undefined && !Array.isArray(source.allowedCidrs)) {
@@ -68,6 +84,15 @@ export function validateGatewayConfig(config: GatewayConfig): void {
 
   for (const destination of config.destinations) {
     if (!destination.id || !destination.urlEnv) throw new Error(`Invalid destination config: ${destination.id}`);
+    if (!methods.has(destination.method)) throw new Error(`destination ${destination.id} has unsupported method ${String(destination.method)}`);
+    if (!payloadModes.has(destination.payloadMode)) throw new Error(`destination ${destination.id} has unsupported payloadMode ${String(destination.payloadMode)}`);
+    if (destination.successMode && !successModes.has(destination.successMode)) {
+      throw new Error(`destination ${destination.id} has unsupported successMode ${String(destination.successMode)}`);
+    }
+    if (destination.unknownPolicy && !unknownPolicies.has(destination.unknownPolicy)) {
+      throw new Error(`destination ${destination.id} has unsupported unknownPolicy ${String(destination.unknownPolicy)}`);
+    }
+    if (typeof destination.enabled !== 'boolean') throw new Error(`destination ${destination.id} enabled must be boolean`);
     addUnique(destinationIds, destination.id, 'destination id');
     const url = optionalEnv(destination.urlEnv);
     if (!url) throw new Error(`destination ${destination.id} urlEnv ${destination.urlEnv} is missing or empty`);
@@ -83,6 +108,10 @@ export function validateGatewayConfig(config: GatewayConfig): void {
     }
     if (destination.timeoutMs !== undefined && (!Number.isInteger(destination.timeoutMs) || destination.timeoutMs < 1)) {
       throw new Error(`destination ${destination.id} timeoutMs must be an integer >= 1`);
+    }
+    const timeoutMs = destination.timeoutMs ?? env.DELIVERY_TIMEOUT_MS;
+    if (timeoutMs + 5_000 >= env.DELIVERY_LEASE_SECONDS * 1000) {
+      throw new Error(`destination ${destination.id} timeoutMs must remain at least 5000ms below DELIVERY_LEASE_SECONDS`);
     }
     if (destination.circuitBreaker !== undefined) {
       const threshold = destination.circuitBreaker.failureThreshold;
@@ -104,6 +133,7 @@ export function validateGatewayConfig(config: GatewayConfig): void {
 
   for (const route of config.routes) {
     if (!route.id) throw new Error('route missing id');
+    if (typeof route.enabled !== 'boolean') throw new Error(`route ${route.id} enabled must be boolean`);
     addUnique(routeIds, route.id, 'route id');
     if (!sourceIds.has(route.sourceId)) throw new Error(`route ${route.id} references missing source ${route.sourceId}`);
     if (!destinationIds.has(route.destinationId)) throw new Error(`route ${route.id} references missing destination ${route.destinationId}`);
