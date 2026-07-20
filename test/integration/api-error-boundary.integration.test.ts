@@ -38,6 +38,14 @@ afterAll(async () => {
 });
 
 describe('API async error boundary', () => {
+  it('rejects malformed Admin UUIDs as client errors before PostgreSQL', async () => {
+    const response = await fetch(`${baseUrl}/admin/events/not-a-uuid`, {
+      headers: { 'x-admin-token': process.env.ADMIN_TOKEN! }
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'invalid id' });
+  });
+
   it('returns a sanitized 500 for an async Admin DB failure and keeps the process alive', async () => {
     const originalQuery = pool.query.bind(pool);
     (pool as unknown as { query: () => Promise<never> }).query = async () => {
