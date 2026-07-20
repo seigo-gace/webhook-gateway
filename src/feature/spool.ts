@@ -7,7 +7,7 @@ import { sanitizeObject } from '../part/sanitize.js';
 
 export interface SpoolPayload {
   receivedAt: string;
-  source: Record<string, unknown>;
+  source: { id: unknown };
   headers: unknown;
   body: string;
   verified: unknown;
