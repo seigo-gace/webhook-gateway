@@ -85,20 +85,33 @@ export async function dispatchPinnedWebhook(input: {
 
 export async function readResponseBodyLimited(response: Response, maxBytes: number): Promise<string> {
   if (!response.body) return '';
+  if (!Number.isInteger(maxBytes) || maxBytes < 1) throw new Error('maxBytes must be an integer >= 1');
+
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
+  let truncated = false;
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       if (!value) continue;
-      size += value.byteLength;
-      if (size > maxBytes) {
-        await reader.cancel('response body too large');
-        throw new Error('DELIVERY_RESPONSE_BODY_TOO_LARGE');
+
+      const remaining = maxBytes - size;
+      if (remaining <= 0) {
+        truncated = true;
+        await reader.cancel('response body limit reached');
+        break;
+      }
+      if (value.byteLength > remaining) {
+        chunks.push(value.slice(0, remaining));
+        size += remaining;
+        truncated = true;
+        await reader.cancel('response body limit reached');
+        break;
       }
       chunks.push(value);
+      size += value.byteLength;
     }
   } finally {
     reader.releaseLock();
@@ -110,5 +123,6 @@ export async function readResponseBodyLimited(response: Response, maxBytes: numb
     merged.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder().decode(merged);
+  const body = new TextDecoder().decode(merged);
+  return truncated ? `${body}\n[TRUNCATED]` : body;
 }
